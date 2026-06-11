@@ -26,7 +26,7 @@ body {
 @keyframes scan { 0%{bottom:100%} 100%{bottom:-100px} }
 #app {
   position:relative; z-index:1; width:100%; height:100vh; display:flex;
-  max-width:1100px; margin:0 auto; padding:20px 24px; gap:16px;
+  max-width:900px; margin:0 auto; padding:20px 24px;
 }
 #main { flex:1; display:flex; flex-direction:column; min-width:0 }
 header {
@@ -64,12 +64,19 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
 .btn-opt:hover { background:rgba(var(--pip-rgb),.08); border-color:var(--pip) }
 .btn-opt.battle { border-color:rgba(224,108,117,.5); color:#e06c75 }
 .btn-opt.battle:hover { background:rgba(224,108,117,.1); border-color:#e06c75 }
-/* 侧边图片 */
-#image-panel { width:280px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; border-left:1px solid rgba(var(--pip-rgb),.15); padding-left:16px }
-#image-panel h3 { font-size:12px; opacity:.5; letter-spacing:3px; text-align:center }
-#image-box { flex:1; display:flex; align-items:center; justify-content:center; border:1px solid rgba(var(--pip-rgb),.2); border-radius:6px; overflow:hidden; background:rgba(0,0,0,.3); min-height:200px }
-#image-box img { max-width:100%; max-height:60vh; object-fit:contain }
-#image-box .placeholder { color:rgba(var(--pip-rgb),.2); font-size:12px; text-align:center }
+.msg-image {
+  width:min(100%,520px); aspect-ratio:1/1; margin-top:12px;
+  border:1px solid rgba(var(--pip-rgb),.22); border-radius:6px;
+  background:rgba(0,0,0,.32); overflow:hidden; display:flex;
+  align-items:center; justify-content:center; white-space:normal;
+}
+.msg-image img { width:100%; height:100%; object-fit:cover; display:block }
+.msg-image .placeholder { color:rgba(var(--pip-rgb),.35); font-size:12px; line-height:1.6; padding:16px; text-align:center }
+@media (max-width:640px) {
+  #app { padding:14px 12px }
+  header h1 { font-size:18px; letter-spacing:4px }
+  .msg-image { width:100% }
+}
 </style>
 </head>
 <body>
@@ -90,10 +97,6 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
       <input id="input" type="text" placeholder="> 输入你的行动..." autofocus>
       <button id="send">发 送</button>
     </div>
-  </div>
-  <div id="image-panel">
-    <h3>📷 场景</h3>
-    <div id="image-box"><div class="placeholder">等待冒险开始…</div></div>
   </div>
 </div>
 
@@ -180,6 +183,10 @@ D. 选项四
 — 不跳过主线阶段、不直接发放碎片、不把AI写成邪恶反派`;
 
 const history = [{ role: 'system', content: SYSTEM }];
+const SCENE_PROMPT_SYSTEM = `你是《白杨大陆：智械低语》的分镜提示生成器。
+根据最近剧情和玩家最新行动，先写一条给生图模型使用的画面提示词。
+只输出一句中文，不要解释，不要选项，不要状态栏，不超过80字。
+提示词要包含地点、主体角色、动作、光线、情绪；保持治愈系校园奇幻风格，避免血腥暴力。`;
 let inBattle = false; // 战斗状态标记
 let typingTimer = null; // 打字机定时器
 
@@ -200,11 +207,20 @@ function typeText(text, container, speed = 35, onDone) {
   let i = 0;
   const chars = [...text]; // 正确处理中文
   const span = document.createElement('span');
+  container._typingDone = false;
 
   // 给战斗消息加特殊样式
   if (inBattle) span.style.color = '#e06c75';
 
   container.appendChild(span);
+
+  container._finishTyping = () => {
+    if (container._typingDone) return;
+    container._typingDone = true;
+    typingTimer = null;
+    span.classList.add('done');
+    if (onDone) onDone();
+  };
 
   function tick() {
     if (i < chars.length) {
@@ -214,7 +230,7 @@ function typeText(text, container, speed = 35, onDone) {
       out.scrollTop = out.scrollHeight;
       typingTimer = setTimeout(tick, speed);
     } else {
-      if (onDone) onDone();
+      container._finishTyping();
     }
   }
   tick();
@@ -236,6 +252,7 @@ function flushAll() {
     if (parent && parent._fullText) {
       s.textContent = parent._fullText;
       s.classList.add('done');
+      if (parent._finishTyping) parent._finishTyping();
     }
   });
 }
@@ -283,6 +300,96 @@ async function generateImage(sceneDescription) {
   }
 }
 
+async function callChat(messages, options = {}) {
+  const resp = await fetch(DEEPSEEK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: options.model || 'deepseek-chat',
+      messages,
+      temperature: options.temperature ?? .85,
+      max_tokens: options.max_tokens ?? 1500
+    })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.choices?.[0]?.message?.content) {
+    console.error('对话接口错误:', data);
+    throw new Error(data.message || data.error?.message || 'AI响应格式异常');
+  }
+  return data.choices[0].message.content.trim();
+}
+
+async function requestScenePrompt() {
+  const sceneMessages = [
+    { role: 'system', content: SCENE_PROMPT_SYSTEM },
+    ...history.slice(1).slice(-8),
+    { role: 'user', content: '请为接下来这一幕生成生图提示词。只输出提示词。' }
+  ];
+  const prompt = await callChat(sceneMessages, { temperature: .55, max_tokens: 120 });
+  return prompt
+    .replace(/^[「"']|[」"']$/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[A-D][.、．]\s*/, '')
+    .slice(0, 160)
+    .trim();
+}
+
+function setImagePlaceholder(slot, text) {
+  slot.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'placeholder';
+  div.textContent = text;
+  slot.appendChild(div);
+}
+
+function attachImage(slot, imagePromise) {
+  setImagePlaceholder(slot, '正在生成场景图...');
+  imagePromise.then(url => {
+    if (!url) {
+      setImagePlaceholder(slot, '场景图生成失败，请检查服务端 DASHSCOPE_API_KEY、额度或模型权限');
+      return;
+    }
+    slot.innerHTML = '';
+    const img = document.createElement('img');
+    img.alt = '场景图';
+    img.loading = 'lazy';
+    img.onerror = () => setImagePlaceholder(slot, '图片加载失败');
+    img.src = url;
+    slot.appendChild(img);
+  }).catch(e => {
+    console.error('图片渲染失败:', e);
+    setImagePlaceholder(slot, '场景图生成失败，请检查服务端 DASHSCOPE_API_KEY、额度或模型权限');
+  });
+}
+
+function updateStatusFromReply(reply) {
+  const statusMatch = reply.match(/📍[^\n]+/);
+  if (statusMatch) updateStatus(statusMatch[0]);
+  else {
+    const bMatch = reply.match(/⚔[^\n]+/);
+    if (bMatch) updateStatus(bMatch[0]);
+  }
+}
+
+function renderAssistantMessage(reply, imagePromise, speed = 28) {
+  const out = document.getElementById('output');
+  const gmDiv = document.createElement('div');
+  gmDiv.className = 'msg gm';
+  gmDiv._fullText = reply;
+  out.appendChild(gmDiv);
+
+  typeText(reply, gmDiv, speed, () => {
+    afterMessage(reply);
+  });
+
+  const imageSlot = document.createElement('div');
+  imageSlot.className = 'msg-image';
+  gmDiv.appendChild(imageSlot);
+  attachImage(imageSlot, imagePromise || generateImage(extractScene(reply)));
+  updateStatusFromReply(reply);
+  out.scrollTop = out.scrollHeight;
+}
+
 // 从回复中提取场景描述用于生图
 function extractScene(reply) {
   // 取前150字作为场景提示
@@ -325,39 +432,21 @@ async function send(msg) {
   out.scrollTop = out.scrollHeight;
 
   try {
-    const resp = await fetch(DEEPSEEK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'deepseek-chat', messages: history, temperature: .85, max_tokens: 1500 })
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || !data.choices?.[0]?.message?.content) {
-      console.error('对话接口错误:', data);
-      throw new Error(data.message || data.error?.message || 'AI响应格式异常');
+    let imagePromise = null;
+    try {
+      const scenePrompt = await requestScenePrompt();
+      if (scenePrompt) imagePromise = generateImage(scenePrompt);
+    } catch (e) {
+      console.warn('短场景提示生成失败，将在正文生成后回退生图:', e);
     }
-    const reply = data.choices[0].message.content;
+
+    const reply = await callChat(history, { temperature: .85, max_tokens: 1500 });
+    if (!imagePromise) imagePromise = generateImage(extractScene(reply));
 
     loadingDiv.remove();
     history.push({ role: 'assistant', content: reply });
 
-    // 打字机效果
-    const gmDiv = document.createElement('div');
-    gmDiv.className = 'msg gm';
-    gmDiv._fullText = reply; // 存完整文本
-    out.appendChild(gmDiv);
-
-    typeText(reply, gmDiv, 28, () => {
-      // 打字完成后处理后续
-      afterMessage(reply);
-    });
-
-    // 更新状态栏
-    const statusMatch = reply.match(/📍[^\n]+/);
-    if (statusMatch) updateStatus(statusMatch[0]);
-    else {
-      const bMatch = reply.match(/⚔[^\n]+/);
-      if (bMatch) updateStatus(bMatch[0]);
-    }
+    renderAssistantMessage(reply, imagePromise, 28);
 
   } catch (e) {
     loadingDiv.remove();
@@ -416,19 +505,6 @@ function afterMessage(reply) {
     }
   }
 
-  // 生图——每次对话结束后生成场景图
-  if (!inBattle) {
-    const imgBox = document.getElementById('image-box');
-    imgBox.innerHTML = '<div class="placeholder" style="font-size:12px;opacity:.6;padding:12px">🎨 正在生成场景图...约12秒</div>';
-    const scene = extractScene(reply);
-    generateImage(scene).then(url => {
-      if (url) {
-        imgBox.innerHTML = `<div class="img-deco"></div><img src="${url}" alt="场景图" onerror="this.parentElement.innerHTML='<div class=placeholder>图片加载失败</div>'" style="max-width:100%;border:1px solid rgba(var(--pip-rgb),.2);border-radius:4px"><div class="img-deco"></div>`;
-      } else {
-        imgBox.innerHTML = '<div class="placeholder" style="font-size:11px;opacity:.4;padding:12px">场景图生成失败，请检查服务端 DASHSCOPE_API_KEY、额度或模型权限</div>';
-      }
-    });
-  }
 }
 
 // 点击消息区域即时完成打字
@@ -472,14 +548,7 @@ B. 观察北门附近的环境，寻找AI系统的漏洞
 C. 尝试感知大黄狗提到的纯白共情光点
 D. 跟随大白鹅，看看它想带你去哪里`;
 
-    const gmDiv = document.createElement('div');
-    gmDiv.className = 'msg gm';
-    gmDiv._fullText = intro;
-    document.getElementById('output').appendChild(gmDiv);
-
-    typeText(intro, gmDiv, 25, () => {
-      afterMessage(intro);
-    });
+    renderAssistantMessage(intro, generateImage(extractScene(intro)), 25);
 
     history.push({ role: 'assistant', content: intro });
   }, 500);
