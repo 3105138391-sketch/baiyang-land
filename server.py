@@ -4,6 +4,7 @@ import time
 import http.server
 import socketserver
 from urllib import error, request
+from urllib.parse import unquote, urlparse
 
 PORT = int(os.environ.get("PORT", 8080))
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -58,7 +59,11 @@ class MyHandler(Handler):
         if self.path.startswith("/api/"):
             self._send_json(404, {"message": "接口不存在"})
             return
-        # 所有路径都返回 baiyang.html
+        requested_path = unquote(urlparse(self.path).path).lstrip("/")
+        if requested_path and os.path.isfile(requested_path):
+            return Handler.do_GET(self)
+
+        # 非静态资源路径都返回 baiyang.html，方便 Render 直接打开根路径
         self.path = "/baiyang.html"
         return Handler.do_GET(self)
 

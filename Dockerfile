@@ -4,6 +4,7 @@ WORKDIR /app
 ENV PORT=8080
 
 COPY baiyang.html server.py ./
+COPY assets ./assets
 
 EXPOSE 8080
 CMD ["python", "server.py"]

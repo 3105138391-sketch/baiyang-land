@@ -7,11 +7,22 @@
 <style>
 :root {
   --pip: #4ec9b0; --pip-rgb: 78,201,176; --pip-soft: #c9fff0; --pip-soft-rgb: 201,255,240;
+  --scene-bg: url("assets/scenes/wutong-avenue.jpg");
 }
 * { margin:0; padding:0; box-sizing:border-box }
 body {
   background:#0c0c0c; color:var(--pip); font-family:'Courier New','PingFang SC',monospace;
-  overflow:hidden; width:100vw; height:100vh; font-size:15px; line-height:1.7;
+  overflow:hidden; width:100vw; height:100vh; font-size:15px; line-height:1.7; position:relative;
+}
+body::before {
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(90deg, rgba(0,0,0,.76), rgba(0,0,0,.48) 48%, rgba(0,0,0,.82)), var(--scene-bg);
+  background-size:cover; background-position:center; transform:scale(1.02);
+  filter:saturate(.9) contrast(.95); transition:background-image .85s ease, filter .85s ease;
+}
+body::after {
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:radial-gradient(circle at 50% 18%, rgba(var(--pip-rgb),.16), transparent 32%), linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.62));
 }
 .crt {
   position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:1000; pointer-events:none;
@@ -28,13 +39,25 @@ body {
   position:relative; z-index:1; width:100%; height:100vh; display:flex;
   max-width:900px; margin:0 auto; padding:20px 24px;
 }
-#main { flex:1; display:flex; flex-direction:column; min-width:0 }
+#main {
+  flex:1; display:flex; flex-direction:column; min-width:0; padding:0 16px;
+  background:linear-gradient(180deg, rgba(2,10,9,.78), rgba(2,8,8,.66));
+  border:1px solid rgba(var(--pip-rgb),.18); border-radius:8px;
+  box-shadow:0 20px 80px rgba(0,0,0,.42); backdrop-filter:blur(10px);
+}
 header {
-  text-align:center; padding:12px 0; border-bottom:1px solid rgba(var(--pip-rgb),.25);
+  position:relative; text-align:center; padding:12px 0; border-bottom:1px solid rgba(var(--pip-rgb),.25);
   margin-bottom:12px; flex-shrink:0;
 }
 header h1 { font-size:20px; letter-spacing:5px; font-weight:400; text-shadow:0 0 8px rgba(var(--pip-rgb),.5) }
 header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
+#end-run {
+  position:absolute; right:0; top:10px; background:rgba(0,0,0,.24);
+  border:1px solid rgba(var(--pip-rgb),.34); color:var(--pip);
+  padding:6px 10px; border-radius:4px; font-family:inherit; font-size:12px;
+  cursor:pointer; letter-spacing:2px; transition:.2s;
+}
+#end-run:hover { background:rgba(var(--pip-rgb),.1); border-color:var(--pip) }
 #output {
   flex:1; overflow-y:auto; padding:12px 0; scroll-behavior:smooth;
 }
@@ -72,10 +95,43 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
 }
 .msg-image img { width:100%; height:100%; object-fit:cover; display:block }
 .msg-image .placeholder { color:rgba(var(--pip-rgb),.35); font-size:12px; line-height:1.6; padding:16px; text-align:center }
+.credits-overlay {
+  position:fixed; inset:0; z-index:1200; display:none; overflow:hidden;
+  background:radial-gradient(circle at 50% 10%, rgba(var(--pip-rgb),.2), transparent 32%), #020403;
+  color:var(--pip-soft);
+}
+.credits-overlay.active { display:block }
+.credits-roll {
+  position:absolute; left:50%; width:min(760px,86vw); top:72%;
+  transform:translateX(-50%); text-align:center; animation:creditsRoll 46s linear forwards;
+  text-shadow:0 0 16px rgba(var(--pip-rgb),.42);
+}
+.credits-roll h2 { font-size:28px; letter-spacing:6px; font-weight:400; margin-bottom:12px }
+.credits-roll h3 { font-size:15px; letter-spacing:4px; font-weight:400; margin:34px 0 12px; color:var(--pip) }
+.credits-roll p { margin:8px 0; color:rgba(var(--pip-soft-rgb),.82) }
+.credits-roll .muted { color:rgba(var(--pip-soft-rgb),.48) }
+.credits-roll .big-stat { font-size:24px; color:var(--pip); margin:12px 0 }
+.credits-actions {
+  position:absolute; right:24px; bottom:20px; display:flex; gap:10px; z-index:2;
+}
+.credits-actions button {
+  background:rgba(0,0,0,.48); border:1px solid rgba(var(--pip-rgb),.42);
+  color:var(--pip); border-radius:4px; padding:8px 12px; font-family:inherit;
+  cursor:pointer;
+}
+.credits-actions button:hover { border-color:var(--pip); background:rgba(var(--pip-rgb),.1) }
+@keyframes creditsRoll {
+  0% { transform:translate(-50%, 0) }
+  100% { transform:translate(-50%, -230%) }
+}
 @media (max-width:640px) {
   #app { padding:14px 12px }
+  #main { padding:0 10px }
   header h1 { font-size:18px; letter-spacing:4px }
+  #end-run { position:static; margin-top:8px }
   .msg-image { width:100% }
+  .credits-roll h2 { font-size:22px }
+  .credits-actions { left:12px; right:12px; justify-content:center }
 }
 </style>
 </head>
@@ -87,6 +143,7 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
     <header>
       <h1>白 杨 大 陆</h1>
       <p>智械低语 · AI 文字跑团</p>
+      <button id="end-run" type="button">结束</button>
     </header>
     <div class="status-bar" id="status">
       <span>📍 中传北门</span><span>📌 序章</span><span>❤️ 100</span><span>💎 100</span><span>✨ 0</span>
@@ -97,6 +154,13 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
       <input id="input" type="text" placeholder="> 输入你的行动..." autofocus>
       <button id="send">发 送</button>
     </div>
+  </div>
+</div>
+<div id="credits-overlay" class="credits-overlay" aria-hidden="true">
+  <div id="credits-roll" class="credits-roll"></div>
+  <div class="credits-actions">
+    <button id="continue-run" type="button">继续游玩</button>
+    <button id="restart-run" type="button">重新开始</button>
   </div>
 </div>
 
@@ -187,8 +251,55 @@ const SCENE_PROMPT_SYSTEM = `你是《白杨大陆：智械低语》的分镜提
 根据最近剧情和玩家最新行动，先写一条给生图模型使用的画面提示词。
 只输出一句中文，不要解释，不要选项，不要状态栏，不超过80字。
 提示词要包含地点、主体角色、动作、光线、情绪；保持治愈系校园奇幻风格，避免血腥暴力。`;
+const SCENE_BACKGROUNDS = [
+  { id:'final-main', label:'主楼之巅', image:'assets/scenes/building-2-dark.jpg', keywords:['主楼之巅','终局','白杨智脑','XNCR','最终'] },
+  { id:'south-gate', label:'中传南门', image:'assets/scenes/south-gate.jpg', keywords:['南门','中传南门','离开白杨大陆'] },
+  { id:'museum', label:'传媒博物馆', image:'assets/scenes/comunication-museun-of-china.jpg', keywords:['传媒博物馆','博物馆'] },
+  { id:'west-wing', label:'西配楼剧场', image:'assets/scenes/west-wing.jpg', keywords:['西配楼','剧场','创作失语','赤红'] },
+  { id:'art-media', label:'艺展中心', image:'assets/scenes/building-art-media.jpg', keywords:['艺展中心','光影','幻音','展厅'] },
+  { id:'apartment', label:'中蓝公寓', image:'assets/scenes/zhonglan-apartment.jpg', keywords:['中蓝公寓','公寓','宿舍','安居小仓鼠'] },
+  { id:'blue-tech', label:'邃蓝楼群', image:'assets/scenes/building-50-behind.jpg', keywords:['国重大楼','未来影像中心','技术孤岛','邃蓝','新知楼'] },
+  { id:'green-classroom', label:'博学楼', image:'assets/scenes/building-25.jpg', keywords:['博学楼','算法教务核心','行政楼','靛绿','校医院'] },
+  { id:'library', label:'万卷渊', image:'assets/scenes/building-53.jpg', keywords:['图书馆','万卷渊','橘座'] },
+  { id:'main-building', label:'主楼', image:'assets/scenes/building-2.jpg', keywords:['主楼','广播','智脑核心'] },
+  { id:'east-wing', label:'东配楼', image:'assets/scenes/east-wing.jpg', keywords:['东配楼','东翼','食堂','南苑食堂','体育场'] },
+  { id:'wutong', label:'梧桐大道', image:'assets/scenes/wutong-avenue.jpg', keywords:['中传北门','北门','梧桐大道','梧桐','北疆','门禁'] }
+];
+const MAIN_STAGES = [
+  { id:'prologue', label:'序章·北疆入口', keywords:['序章','北门','梧桐大道','北疆'] },
+  { id:'green', label:'靛绿·博学楼净化', keywords:['靛绿','博学楼','算法教务核心'] },
+  { id:'blue', label:'邃蓝·技术孤岛净化', keywords:['邃蓝','国重大楼','未来影像中心','技术孤岛'] },
+  { id:'red', label:'赤红·西配楼剧场', keywords:['赤红','西配楼','创作失语'] },
+  { id:'truth', label:'图书馆·橘座真相', keywords:['图书馆','万卷渊','橘座揭示真相','橘座'] },
+  { id:'finale', label:'主楼之巅·终局广播', keywords:['主楼之巅','白杨智脑','XNCR','终局','结局'] }
+];
+const SIDE_QUESTS = [
+  { id:'piano-lake', label:'钢琴湖晚风', keywords:['钢琴湖'] },
+  { id:'walnut', label:'核桃林低语', keywords:['核桃林'] },
+  { id:'canteen', label:'南苑食堂烟火', keywords:['南苑食堂','食堂'] },
+  { id:'museum', label:'传媒博物馆', keywords:['传媒博物馆','博物馆'] },
+  { id:'stadium', label:'体育场自由奔跑', keywords:['体育场'] },
+  { id:'apartment', label:'公寓陪伴', keywords:['公寓','中蓝公寓','宿舍','安居小仓鼠'] }
+];
+const FRAGMENTS = [
+  { id:'green', label:'靛绿碎片', keywords:['靛绿碎片','靛绿◆'] },
+  { id:'blue', label:'邃蓝碎片', keywords:['邃蓝碎片','邃蓝◆'] },
+  { id:'red', label:'赤红碎片', keywords:['赤红碎片','赤红◆'] },
+  { id:'white', label:'纯白碎片', keywords:['纯白碎片','纯白◆'] }
+];
 let inBattle = false; // 战斗状态标记
 let typingTimer = null; // 打字机定时器
+let currentSceneId = 'wutong';
+let gameEnded = false;
+const gameProgress = {
+  turns: 0,
+  main: new Set(),
+  side: new Set(),
+  fragments: new Set(),
+  locations: new Set(),
+  scenes: new Set(['梧桐大道']),
+  playerActions: []
+};
 
 function updateStatus(text) {
   const status = document.getElementById('status');
@@ -200,6 +311,56 @@ function updateStatus(text) {
     span.textContent = p.trim();
     status.appendChild(span);
   });
+}
+
+function hasAnyKeyword(text, keywords) {
+  return keywords.some(keyword => text.includes(keyword));
+}
+
+function getSceneRoutingText(reply) {
+  const lines = reply.split('\n').map(line => line.trim()).filter(Boolean);
+  const normalLine = lines.find(line => line.includes('📍'));
+  if (normalLine) return normalLine.replace(/[｜]/g, '|').split('|').slice(0, 2).join('|');
+  const battleLine = lines.find(line => line.includes('⚔'));
+  if (battleLine) return battleLine.replace(/[｜]/g, '|').split('|').slice(0, 2).join('|');
+  return reply.slice(0, 260);
+}
+
+function chooseScene(reply) {
+  const routingText = getSceneRoutingText(reply);
+  return SCENE_BACKGROUNDS.find(scene => hasAnyKeyword(routingText, scene.keywords)) ||
+         SCENE_BACKGROUNDS.find(scene => scene.id === currentSceneId);
+}
+
+function setSceneBackground(scene) {
+  if (!scene) return;
+  gameProgress.scenes.add(scene.label);
+  if (scene.id === currentSceneId) {
+    document.body.dataset.scene = scene.id;
+    return;
+  }
+  currentSceneId = scene.id;
+  document.documentElement.style.setProperty('--scene-bg', `url("${scene.image}")`);
+  document.body.dataset.scene = scene.id;
+}
+
+function recordProgress(reply) {
+  gameProgress.turns += 1;
+  const routingText = getSceneRoutingText(reply);
+  const statusMatch = reply.match(/(?:📍|地点[:：])\s*([^|\n]+)/);
+  if (statusMatch) gameProgress.locations.add(statusMatch[1].trim());
+
+  MAIN_STAGES.forEach(stage => {
+    if (hasAnyKeyword(routingText, stage.keywords)) gameProgress.main.add(stage.id);
+  });
+  SIDE_QUESTS.forEach(quest => {
+    if (hasAnyKeyword(reply, quest.keywords)) gameProgress.side.add(quest.id);
+  });
+  FRAGMENTS.forEach(fragment => {
+    if (hasAnyKeyword(reply, fragment.keywords)) gameProgress.fragments.add(fragment.id);
+  });
+
+  setSceneBackground(chooseScene(reply));
 }
 
 // 打字机效果
@@ -377,15 +538,23 @@ function renderAssistantMessage(reply, imagePromise, speed = 28) {
   gmDiv.className = 'msg gm';
   gmDiv._fullText = reply;
   out.appendChild(gmDiv);
+  recordProgress(reply);
+  const imageSlot = document.createElement('div');
+  imageSlot.className = 'msg-image';
+  let imageAttached = false;
+  const revealInlineImage = () => {
+    if (imageAttached) return;
+    imageAttached = true;
+    gmDiv.appendChild(imageSlot);
+    attachImage(imageSlot, imagePromise || generateImage(extractScene(reply)));
+    out.scrollTop = out.scrollHeight;
+  };
 
   typeText(reply, gmDiv, speed, () => {
+    revealInlineImage();
     afterMessage(reply);
   });
 
-  const imageSlot = document.createElement('div');
-  imageSlot.className = 'msg-image';
-  gmDiv.appendChild(imageSlot);
-  attachImage(imageSlot, imagePromise || generateImage(extractScene(reply)));
   updateStatusFromReply(reply);
   out.scrollTop = out.scrollHeight;
 }
@@ -400,8 +569,98 @@ function extractScene(reply) {
   return scene || '白杨大陆校园场景，柔光，温暖';
 }
 
+function escapeHTML(text) {
+  return String(text).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[ch]));
+}
+
+function labelsFrom(definitions, selectedSet) {
+  return definitions.filter(item => selectedSet.has(item.id)).map(item => item.label);
+}
+
+function missingLabelsFrom(definitions, selectedSet) {
+  return definitions.filter(item => !selectedSet.has(item.id)).map(item => item.label);
+}
+
+function renderCreditLines(items, emptyText) {
+  if (!items.length) return `<p class="muted">${escapeHTML(emptyText)}</p>`;
+  return items.map(item => `<p>${escapeHTML(item)}</p>`).join('');
+}
+
+function buildEndingCredits() {
+  const mainUnlocked = labelsFrom(MAIN_STAGES, gameProgress.main);
+  const sideUnlocked = labelsFrom(SIDE_QUESTS, gameProgress.side);
+  const fragmentUnlocked = labelsFrom(FRAGMENTS, gameProgress.fragments);
+  const mainLocked = missingLabelsFrom(MAIN_STAGES, gameProgress.main);
+  const sideLocked = missingLabelsFrom(SIDE_QUESTS, gameProgress.side);
+  const fragmentLocked = missingLabelsFrom(FRAGMENTS, gameProgress.fragments);
+  const locations = [...gameProgress.locations].slice(-10);
+  const scenes = [...gameProgress.scenes];
+  const actions = gameProgress.playerActions.slice(-8).map(action => `> ${action}`);
+
+  return `
+    <h2>白杨大陆 · 本次谢幕</h2>
+    <p class="muted">智械低语游玩记录</p>
+    <p class="big-stat">主线 ${mainUnlocked.length}/${MAIN_STAGES.length} · 支线 ${sideUnlocked.length}/${SIDE_QUESTS.length}</p>
+
+    <h3>你已走过的主线</h3>
+    ${renderCreditLines(mainUnlocked, '尚未解锁主线节点')}
+
+    <h3>你已触碰的纯白支线</h3>
+    ${renderCreditLines(sideUnlocked, '尚未解锁支线')}
+
+    <h3>已收集的道韵碎片</h3>
+    ${renderCreditLines(fragmentUnlocked, '尚未收集碎片')}
+
+    <h3>到达过的地点</h3>
+    ${renderCreditLines(locations, '暂无地点记录')}
+
+    <h3>切换过的场景幕布</h3>
+    ${renderCreditLines(scenes, '暂无场景记录')}
+
+    <h3>玩家行动摘录</h3>
+    ${renderCreditLines(actions, '尚未记录玩家行动')}
+
+    <h3>仍未解锁</h3>
+    ${renderCreditLines([...mainLocked, ...sideLocked, ...fragmentLocked], '全部记录项目均已解锁')}
+
+    <h3>片尾字幕</h3>
+    <p>主演：天选修士</p>
+    <p>同行：大黄狗、大白鹅与所有仍在守护温度的灵兽</p>
+    <p>特别鸣谢：每一次没有被效率吞没的停留</p>
+    <p class="muted">白杨大陆仍在转动。你可以继续游玩，或重新开始一段新的行迹。</p>
+  `;
+}
+
+function showEndingCredits() {
+  flushAll();
+  gameEnded = true;
+  const overlay = document.getElementById('credits-overlay');
+  const roll = document.getElementById('credits-roll');
+  roll.innerHTML = buildEndingCredits();
+  roll.style.animation = 'none';
+  void roll.offsetHeight;
+  roll.style.animation = '';
+  overlay.classList.add('active');
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function hideEndingCredits() {
+  gameEnded = false;
+  const overlay = document.getElementById('credits-overlay');
+  overlay.classList.remove('active');
+  overlay.setAttribute('aria-hidden', 'true');
+  document.getElementById('input').focus();
+}
+
 async function send(msg) {
-  if (!msg.trim()) return;
+  const cleanMsg = msg.trim();
+  if (!cleanMsg || gameEnded) return;
+  if (['结束','退出','谢幕','end','END'].includes(cleanMsg)) {
+    showEndingCredits();
+    return;
+  }
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send');
   const optsArea = document.getElementById('opts-area');
@@ -414,11 +673,14 @@ async function send(msg) {
   const out = document.getElementById('output');
   const playerDiv = document.createElement('div');
   playerDiv.className = 'msg player';
-  playerDiv.textContent = msg;
+  playerDiv.textContent = cleanMsg;
   out.appendChild(playerDiv);
   out.scrollTop = out.scrollHeight;
 
-  history.push({ role: 'user', content: msg });
+  gameProgress.playerActions.push(cleanMsg);
+  if (gameProgress.playerActions.length > 20) gameProgress.playerActions.shift();
+
+  history.push({ role: 'user', content: cleanMsg });
   if (history.length > 30) history.splice(1, history.length - 28);
 
   // Loading 指示器
@@ -512,6 +774,12 @@ document.getElementById('output').addEventListener('click', (e) => {
   if (typingTimer) {
     flushAll();
   }
+});
+
+document.getElementById('end-run').addEventListener('click', showEndingCredits);
+document.getElementById('continue-run').addEventListener('click', hideEndingCredits);
+document.getElementById('restart-run').addEventListener('click', () => {
+  window.location.reload();
 });
 
 document.getElementById('send').addEventListener('click', () => {
