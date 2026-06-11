@@ -1,10 +1,18 @@
-import http.server, socketserver, os
+import http.server
+import socketserver
+import os
+
 PORT = int(os.environ.get("PORT", 8080))
-class H(http.server.SimpleHTTPRequestHandler):
+
+Handler = http.server.SimpleHTTPRequestHandler
+
+class MyHandler(Handler):
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
-            self.path = "/baiyang.html"
-        return super().do_GET()
-with socketserver.TCPServer(("0.0.0.0", PORT), H) as httpd:
-    print(f"Serving on port {PORT}")
+        print(f"请求路径: {self.path}")
+        # 所有路径都返回 baiyang.html
+        self.path = "/baiyang.html"
+        return Handler.do_GET(self)
+
+with socketserver.TCPServer(("0.0.0.0", PORT), MyHandler) as httpd:
+    print(f"白杨大陆 服务器启动 - 端口 {PORT}")
     httpd.serve_forever()
