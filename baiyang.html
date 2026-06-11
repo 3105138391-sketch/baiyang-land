@@ -98,11 +98,8 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
 </div>
 
 <script>
-const DEEPSEEK_KEY = 'sk-55e14ab76b114283aaaa353f7cd4a3a4';
-const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
-const QWEN_KEY = 'sk-5c191e5c591c4b97b311268fceb78666';
-const QWEN_IMG_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis';
-const QWEN_TXT_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+const DEEPSEEK_URL = '/api/chat';
+const QWEN_IMG_URL = '/api/image';
 
 const SYSTEM = `你是《白杨大陆：智械低语》的AI游戏主持人(GM)。
 
@@ -269,41 +266,17 @@ async function generateImage(sceneDescription) {
     const resp = await fetch(QWEN_IMG_URL, {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + QWEN_KEY,
-        'Content-Type': 'application/json',
-        'X-DashScope-Async': 'enable'
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: 'wanx2.0-t2i-turbo',
-        input: {
-          prompt: '中国传媒大学校园场景，暖色调，治愈系插画风格，柔光，' + sceneDescription
-        },
-        parameters: { size: '1024*1024', n: 1 }
-      })
+      body: JSON.stringify({ scene: sceneDescription })
     });
 
-    const data = await resp.json();
-    // 同步模式直接返回
-    if (data.output?.results?.length > 0) {
-      return data.output.results[0].url;
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      console.error('生图接口错误:', data);
+      return null;
     }
-    // 异步模式需要轮询
-    if (data.output?.task_id) {
-      const taskId = data.output.task_id;
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        const pollResp = await fetch(
-          `https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`,
-          { headers: { 'Authorization': 'Bearer ' + QWEN_KEY } }
-        );
-        const pollData = await pollResp.json();
-        if (pollData.output?.task_status === 'SUCCEEDED') {
-          return pollData.output.results[0].url;
-        }
-        if (pollData.output?.task_status === 'FAILED') break;
-      }
-    }
-    return null;
+    return data.url || null;
   } catch (e) {
     console.error('生图失败:', e);
     return null;
@@ -354,10 +327,14 @@ async function send(msg) {
   try {
     const resp = await fetch(DEEPSEEK_URL, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + DEEPSEEK_KEY, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'deepseek-chat', messages: history, temperature: .85, max_tokens: 1500 })
     });
-    const data = await resp.json();
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.choices?.[0]?.message?.content) {
+      console.error('对话接口错误:', data);
+      throw new Error(data.message || data.error?.message || 'AI响应格式异常');
+    }
     const reply = data.choices[0].message.content;
 
     loadingDiv.remove();
@@ -448,7 +425,7 @@ function afterMessage(reply) {
       if (url) {
         imgBox.innerHTML = `<div class="img-deco"></div><img src="${url}" alt="场景图" onerror="this.parentElement.innerHTML='<div class=placeholder>图片加载失败</div>'" style="max-width:100%;border:1px solid rgba(var(--pip-rgb),.2);border-radius:4px"><div class="img-deco"></div>`;
       } else {
-        imgBox.innerHTML = '<div class="placeholder" style="font-size:11px;opacity:.4;padding:12px">场景图生成失败，请检查千问API额度</div>';
+        imgBox.innerHTML = '<div class="placeholder" style="font-size:11px;opacity:.4;padding:12px">场景图生成失败，请检查服务端 DASHSCOPE_API_KEY、额度或模型权限</div>';
       }
     });
   }

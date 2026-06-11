@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: baiyang-land
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: DASHSCOPE_IMAGE_MODEL
+        value: wanx2.0-t2i-turbo
+      - key: DASHSCOPE_IMAGE_SIZE
+        value: 1024*1024
+      - key: DASHSCOPE_POLL_INTERVAL
+        value: "10"
+      - key: DASHSCOPE_MAX_POLLS
+        value: "12"
