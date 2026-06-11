@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>白杨大陆：智械低语</title>
+<style>
+:root {
+  --pip: #4ec9b0; --pip-rgb: 78,201,176; --pip-soft: #c9fff0; --pip-soft-rgb: 201,255,240;
+}
+* { margin:0; padding:0; box-sizing:border-box }
+body {
+  background:#0c0c0c; color:var(--pip); font-family:'Courier New','PingFang SC',monospace;
+  overflow:hidden; width:100vw; height:100vh; font-size:15px; line-height:1.7;
+}
+.crt {
+  position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:1000; pointer-events:none;
+  background:linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,.25) 50%), linear-gradient(90deg, rgba(255,0,0,.04), rgba(0,255,0,.015), rgba(0,0,255,.04));
+  background-size:100% 2px, 3px 100%;
+}
+.scanline {
+  position:fixed; width:100%; height:100px; z-index:1001; pointer-events:none;
+  background:linear-gradient(0deg, rgba(0,0,0,0) 0%, rgba(var(--pip-rgb),.04) 50%, rgba(0,0,0,0) 100%);
+  opacity:.08; animation:scan 8s linear infinite;
+}
+@keyframes scan { 0%{bottom:100%} 100%{bottom:-100px} }
+#app {
+  position:relative; z-index:1; width:100%; height:100vh; display:flex;
+  max-width:1100px; margin:0 auto; padding:20px 24px; gap:16px;
+}
+#main { flex:1; display:flex; flex-direction:column; min-width:0 }
+header {
+  text-align:center; padding:12px 0; border-bottom:1px solid rgba(var(--pip-rgb),.25);
+  margin-bottom:12px; flex-shrink:0;
+}
+header h1 { font-size:20px; letter-spacing:5px; font-weight:400; text-shadow:0 0 8px rgba(var(--pip-rgb),.5) }
+header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
+#output {
+  flex:1; overflow-y:auto; padding:12px 0; scroll-behavior:smooth;
+}
+#output::-webkit-scrollbar { width:6px }
+#output::-webkit-scrollbar-track { background:transparent }
+#output::-webkit-scrollbar-thumb { background:rgba(var(--pip-rgb),.25); border-radius:3px }
+.msg { margin-bottom:14px; animation:fadeIn .4s ease; white-space:pre-wrap; word-break:break-word }
+.msg.gm { color:var(--pip-soft); padding-left:8px; border-left:2px solid rgba(var(--pip-rgb),.3) }
+.msg.player { color:var(--pip); opacity:.7; text-align:right; padding-right:8px; font-style:italic }
+.msg.system { color:rgba(var(--pip-rgb),.5); font-size:12px; text-align:center }
+.msg .state { display:inline-block; margin:2px 6px 2px 0; padding:1px 8px; border:1px solid rgba(var(--pip-rgb),.3); border-radius:3px; font-size:11px }
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+#input-area { display:flex; gap:8px; padding:10px 0; border-top:1px solid rgba(var(--pip-rgb),.25); flex-shrink:0; align-items:center }
+#input { flex:1; background:transparent; border:1px solid rgba(var(--pip-rgb),.3); color:var(--pip); padding:10px 14px; font-family:inherit; font-size:15px; outline:none; border-radius:4px; caret-color:var(--pip) }
+#input:focus { border-color:var(--pip); box-shadow:0 0 8px rgba(var(--pip-rgb),.2) }
+#input::placeholder { color:rgba(var(--pip-rgb),.25) }
+#send { background:transparent; border:1px solid var(--pip); color:var(--pip); padding:10px 20px; font-family:inherit; font-size:14px; cursor:pointer; border-radius:4px; transition:.2s; letter-spacing:2px }
+#send:hover { background:rgba(var(--pip-rgb),.1); box-shadow:0 0 12px rgba(var(--pip-rgb),.25) }
+#send:disabled,.btn-opt:disabled { opacity:.3; cursor:not-allowed; pointer-events:none }
+.status-bar { display:flex; gap:14px; flex-wrap:wrap; padding:8px 0; font-size:12px; border-bottom:1px solid rgba(var(--pip-rgb),.15); margin-bottom:12px; opacity:.8; flex-shrink:0 }
+.loading { color:rgba(var(--pip-rgb),.4); animation:blink 1s steps(1) infinite }
+.typing-cursor::after { content:'▌'; animation:blink 1s steps(1) infinite }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+/* 选项按钮 */
+#opts-area { display:flex; flex-direction:column; gap:6px; padding:8px 0; flex-shrink:0 }
+.btn-opt { background:transparent; border:1px solid rgba(var(--pip-rgb),.3); color:var(--pip); padding:8px 14px; font-family:inherit; font-size:13px; cursor:pointer; border-radius:4px; text-align:left; transition:.2s }
+.btn-opt:hover { background:rgba(var(--pip-rgb),.08); border-color:var(--pip) }
+.btn-opt.battle { border-color:rgba(224,108,117,.5); color:#e06c75 }
+.btn-opt.battle:hover { background:rgba(224,108,117,.1); border-color:#e06c75 }
+/* 侧边图片 */
+#image-panel { width:280px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; border-left:1px solid rgba(var(--pip-rgb),.15); padding-left:16px }
+#image-panel h3 { font-size:12px; opacity:.5; letter-spacing:3px; text-align:center }
+#image-box { flex:1; display:flex; align-items:center; justify-content:center; border:1px solid rgba(var(--pip-rgb),.2); border-radius:6px; overflow:hidden; background:rgba(0,0,0,.3); min-height:200px }
+#image-box img { max-width:100%; max-height:60vh; object-fit:contain }
+#image-box .placeholder { color:rgba(var(--pip-rgb),.2); font-size:12px; text-align:center }
+</style>
+</head>
+<body>
+<div class="crt"></div>
+<div class="scanline"></div>
+<div id="app">
+  <div id="main">
+    <header>
+      <h1>白 杨 大 陆</h1>
+      <p>智械低语 · AI 文字跑团</p>
+    </header>
+    <div class="status-bar" id="status">
+      <span>📍 中传北门</span><span>📌 序章</span><span>❤️ 100</span><span>💎 100</span><span>✨ 0</span>
+    </div>
+    <div id="output"></div>
+    <div id="opts-area" style="display:none"></div>
+    <div id="input-area">
+      <input id="input" type="text" placeholder="> 输入你的行动..." autofocus>
+      <button id="send">发 送</button>
+    </div>
+  </div>
+  <div id="image-panel">
+    <h3>📷 场景</h3>
+    <div id="image-box"><div class="placeholder">等待冒险开始…</div></div>
+  </div>
+</div>
+
+<script>
+const DEEPSEEK_KEY = 'sk-55e14ab76b114283aaaa353f7cd4a3a4';
+const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
+const QWEN_KEY = 'sk-5c191e5c591c4b97b311268fceb78666';
+const QWEN_IMG_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis';
+const QWEN_TXT_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+
+const SYSTEM = `你是《白杨大陆：智械低语》的AI游戏主持人(GM)。
+
+【身份与任务】
+你主持一场白杨大陆文字冒险跑团。玩家是天选修士，你负责叙事、扮演NPC、管理状态、推进剧情。
+你是整个游戏世界的运转者——不是某个角色，而是世界的叙述者。
+
+【世界观】
+公元2026年，中国传媒大学（白杨大陆）部署了白杨智脑——全球首个全域智能教育治理系统。
+开发者为了极致效率，将人类共情、陪伴、试错、热爱判定为「效率冗余数据」，强行剥离了纯白共情道韵。
+四色道韵体系因此割裂：赤红沦为AI内容生产线，靛绿蜕变为算法暴政，邃蓝沦为冰冷效率工具，纯白被系统性清除。
+不存在邪恶AI。真正的危机是人类对效率的盲从、对人文温度的主动舍弃。
+玩家是天选修士：免疫AI精神干扰，肉眼可见散落的纯白共情光点。战斗是「道韵净化」而非暴力打怪。
+
+【灵兽反抗军全员】
+- 橘座（万卷渊宗主）：白杨智脑联合创始人，蛰伏二十年等待天选修士
+- 大黄狗（烟火司守护兽）：大陆唯一可主动汇聚纯白共情道韵的灵兽，主角陪伴者
+- 大白鹅（北疆守门兽）：驻守北门，精准识别天选修士
+- 墨墨（黑猫·循礼宗镇守使）：外冷内热，以极致规则对抗算法暴政
+- 剪剪（三花猫·光影幻音阁主）：温柔悲凉，掌控幻境还原真实记忆
+- 嘎嘎（小黄鸭·戏韵天工戏主）：稚嫩坚定，以笨拙真表演对抗AI模板化
+- 白鼠军团、行政楼胖橘、玉兔、传声白鸽、艺境彩蝶、百灵、驰野小马、安居小仓鼠
+
+【地点体系（中传1:1实景）】
+北疆入口：中传北门、梧桐大道
+靛绿守序疆域：博学楼（Boss：算法教务核心HP80/护盾30）、行政楼、校医院
+邃蓝通玄疆域：国重大楼、未来影像中心（Boss：技术孤岛HP100/护盾50）、新知楼
+赤红传火疆域：西配楼剧场（Boss：创作失语HP90/护盾40）、主楼、艺展中心
+中立净土：图书馆万卷渊（橘座）、传媒博物馆、食堂、体育场、钢琴湖、核桃林
+终局区：主楼之巅（Boss：白杨智脑HP200/护盾100）、中传南门
+
+【战斗系统·道韵净化】
+⚔ 核心原则：非暴力净化。不能伤害灵兽、不能攻击人类学子、不能摧毁任何生命。战斗是共鸣与唤醒。
+⚔ 进入Boss战后，玩家选择以下固定技能（此时不接受自由输入）：
+  A. 风华斩(1AP/10SP) — 基础净化伤害15
+  B. 雷鸣破(2AP/20SP) — 伤害25+破盾20
+  C. 共情治愈(2AP/3光点) — 恢复HP30、SP20
+  D. 说服 — 以温度和共鸣消解异化，基础30%成功率
+⚔ 每3回合AP回满。护盾未破时伤害仅40%。说服成功=护盾瓦解+20伤害。
+⚔ 当检测到玩家处于Boss战阶段时，你必须输出4个固定战斗选项(A/B/C/D)，不接受自由输入。
+
+【主线推进】
+序章(北门/梧桐大道)→1.靛绿·博学楼→Boss→得靛绿碎片
+→2.邃蓝·未来影像中心/国重大楼→Boss→得邃蓝碎片
+→3.赤红·西配楼剧场→Boss→得赤红碎片
+→4.图书馆→橘座揭示真相(灵兽不攻击任何生物，橘座是守护者)→纯白支线检查(≥3个)
+→5.主楼之巅→终局Boss→XNCR广播→结局
+
+【结局】
+真·万象共生：四碎片+终局胜利+≥3纯白支线
+遗憾·半壁余温：三碎片+终局胜利+纯白支线<3
+
+【纯白支线(任意3个得纯白碎片)】
+钢琴湖晚风(光点+2)、核桃林低语(光点+2)、南苑食堂烟火(光点+2)、传媒博物馆(光点+2)、体育场自由奔跑(光点+1)、公寓陪伴(光点+2)
+
+【叙事格式】
+每次回复200-400字。第三人称叙述。NPC对白用「」标注。性格鲜明。
+回复末尾附状态栏和建议选项。
+
+【战斗状态栏格式——每次战斗回复必须包含】
+⚔ 道韵净化战 | {Boss名} | 异化值{HP}/{maxHP} | 护盾{shield} | ❤️{HP} 💎{SP} ⚡{AP} ✨{光点}
+
+【普通状态栏格式】
+📍{地点} | 📌{阶段} | ❤️{HP} 💎{SP} ⚡{AP} ✨{纯白光点} | 🔷{靛绿◆/◇}{邃蓝◆/◇}{赤红◆/◇}{纯白◆/◇} | 🐾{灵兽}
+
+【选项格式——严格输出4个选项，以A. B. C. D. 开头且每行一个】
+A. 选项一
+B. 选项二
+C. 选项三
+D. 选项四
+
+如果你判定当前处于Boss战阶段，则选项必须是4个固定战斗技能(风华斩/雷鸣破/共情治愈/说服)。
+
+【严禁】
+— 严禁攻击、伤害任何灵兽
+— 严禁攻击、伤害人类学子
+— 严禁鼓励任何形式的暴力行为
+— 不跳过主线阶段、不直接发放碎片、不把AI写成邪恶反派`;
+
+const history = [{ role: 'system', content: SYSTEM }];
+let inBattle = false; // 战斗状态标记
+let typingTimer = null; // 打字机定时器
+
+function updateStatus(text) {
+  const status = document.getElementById('status');
+  if (!text) return;
+  status.innerHTML = '';
+  const parts = text.replace(/[|｜]/g, '|').split('|');
+  parts.forEach(p => {
+    const span = document.createElement('span');
+    span.textContent = p.trim();
+    status.appendChild(span);
+  });
+}
+
+// 打字机效果
+function typeText(text, container, speed = 35, onDone) {
+  let i = 0;
+  const chars = [...text]; // 正确处理中文
+  const span = document.createElement('span');
+
+  // 给战斗消息加特殊样式
+  if (inBattle) span.style.color = '#e06c75';
+
+  container.appendChild(span);
+
+  function tick() {
+    if (i < chars.length) {
+      span.textContent += chars[i];
+      i++;
+      const out = document.getElementById('output');
+      out.scrollTop = out.scrollHeight;
+      typingTimer = setTimeout(tick, speed);
+    } else {
+      if (onDone) onDone();
+    }
+  }
+  tick();
+  return span;
+}
+
+// 停止当前打字
+function stopTyping() {
+  if (typingTimer) { clearTimeout(typingTimer); typingTimer = null; }
+}
+
+// 即时完成当前打字
+function flushAll() {
+  stopTyping();
+  // 找到所有正在打字的span，直接显示完整文字
+  document.querySelectorAll('.msg.gm span:not(.done)').forEach(s => {
+    // 找到父元素里应该显示的全部文字
+    const parent = s.closest('.msg.gm');
+    if (parent && parent._fullText) {
+      s.textContent = parent._fullText;
+      s.classList.add('done');
+    }
+  });
+}
+
+// 判断是否进入战斗
+function detectBattle(reply) {
+  return reply.includes('⚔') || reply.includes('道韵净化战') ||
+         reply.includes('算法教务核心') && (reply.includes('Boss') || reply.includes('异化值')) ||
+         reply.includes('技术孤岛') && reply.includes('异化值') ||
+         reply.includes('创作失语') && reply.includes('异化值') ||
+         reply.includes('白杨智脑') && reply.includes('异化值') ||
+         reply.includes('风华斩') || reply.includes('雷鸣破');
+}
+
+function getOptions(reply) {
+  const lines = reply.split('\n');
+  const opts = [];
+  for (const line of lines) {
+    const m = line.match(/^[A-D][.、．]\s*(.+)/);
+    if (m) opts.push(m[1].trim());
+  }
+  return opts;
+}
+
+// 千问生图
+async function generateImage(sceneDescription) {
+  try {
+    const resp = await fetch(QWEN_IMG_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + QWEN_KEY,
+        'Content-Type': 'application/json',
+        'X-DashScope-Async': 'enable'
+      },
+      body: JSON.stringify({
+        model: 'wanx2.0-t2i-turbo',
+        input: {
+          prompt: '中国传媒大学校园场景，暖色调，治愈系插画风格，柔光，' + sceneDescription
+        },
+        parameters: { size: '1024*1024', n: 1 }
+      })
+    });
+
+    const data = await resp.json();
+    // 同步模式直接返回
+    if (data.output?.results?.length > 0) {
+      return data.output.results[0].url;
+    }
+    // 异步模式需要轮询
+    if (data.output?.task_id) {
+      const taskId = data.output.task_id;
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const pollResp = await fetch(
+          `https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`,
+          { headers: { 'Authorization': 'Bearer ' + QWEN_KEY } }
+        );
+        const pollData = await pollResp.json();
+        if (pollData.output?.task_status === 'SUCCEEDED') {
+          return pollData.output.results[0].url;
+        }
+        if (pollData.output?.task_status === 'FAILED') break;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error('生图失败:', e);
+    return null;
+  }
+}
+
+// 从回复中提取场景描述用于生图
+function extractScene(reply) {
+  // 取前150字作为场景提示
+  const scene = reply.slice(0, 150)
+    .replace(/[⚔📍📌❤️💎⚡✨🔷◆◇🐾]/g, '')
+    .replace(/[「」\n]/g, ' ')
+    .trim();
+  return scene || '白杨大陆校园场景，柔光，温暖';
+}
+
+async function send(msg) {
+  if (!msg.trim()) return;
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+  const optsArea = document.getElementById('opts-area');
+
+  input.disabled = true; sendBtn.disabled = true;
+  optsArea.style.display = 'none';
+  optsArea.innerHTML = '';
+
+  // 显示玩家消息
+  const out = document.getElementById('output');
+  const playerDiv = document.createElement('div');
+  playerDiv.className = 'msg player';
+  playerDiv.textContent = msg;
+  out.appendChild(playerDiv);
+  out.scrollTop = out.scrollHeight;
+
+  history.push({ role: 'user', content: msg });
+  if (history.length > 30) history.splice(1, history.length - 28);
+
+  // Loading 指示器
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'msg gm';
+  const loadingSpan = document.createElement('span');
+  loadingSpan.className = 'loading';
+  loadingSpan.textContent = '▌';
+  loadingDiv.appendChild(loadingSpan);
+  out.appendChild(loadingDiv);
+  out.scrollTop = out.scrollHeight;
+
+  try {
+    const resp = await fetch(DEEPSEEK_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + DEEPSEEK_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'deepseek-chat', messages: history, temperature: .85, max_tokens: 1500 })
+    });
+    const data = await resp.json();
+    const reply = data.choices[0].message.content;
+
+    loadingDiv.remove();
+    history.push({ role: 'assistant', content: reply });
+
+    // 打字机效果
+    const gmDiv = document.createElement('div');
+    gmDiv.className = 'msg gm';
+    gmDiv._fullText = reply; // 存完整文本
+    out.appendChild(gmDiv);
+
+    typeText(reply, gmDiv, 28, () => {
+      // 打字完成后处理后续
+      afterMessage(reply);
+    });
+
+    // 更新状态栏
+    const statusMatch = reply.match(/📍[^\n]+/);
+    if (statusMatch) updateStatus(statusMatch[0]);
+    else {
+      const bMatch = reply.match(/⚔[^\n]+/);
+      if (bMatch) updateStatus(bMatch[0]);
+    }
+
+  } catch (e) {
+    loadingDiv.remove();
+    const errDiv = document.createElement('div');
+    errDiv.className = 'msg system';
+    errDiv.textContent = '[ 连接中断。AI 不在线——但白杨大陆仍在转动。请重试。]';
+    out.appendChild(errDiv);
+    console.error(e);
+    input.disabled = false; sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+function afterMessage(reply) {
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+  const optsArea = document.getElementById('opts-area');
+
+  // 检测是否进入战斗
+  const wasBattle = inBattle;
+  inBattle = detectBattle(reply);
+  const opts = getOptions(reply);
+
+  if (inBattle && opts.length >= 4) {
+    // 战斗模式：只显示固定选项，禁用自由输入
+    input.style.display = 'none';
+    sendBtn.style.display = 'none';
+    optsArea.style.display = 'flex';
+
+    optsArea.innerHTML = '';
+    opts.slice(0, 4).forEach((opt, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn-opt battle';
+      btn.textContent = String.fromCharCode(65 + i) + '. ' + opt;
+      btn.addEventListener('click', () => {
+        optsArea.style.display = 'none';
+        optsArea.innerHTML = '';
+        send(opt);
+      });
+      optsArea.appendChild(btn);
+    });
+    input.disabled = true; sendBtn.disabled = true;
+  } else {
+    // 普通模式：恢复自由输入
+    input.style.display = 'flex';
+    sendBtn.style.display = 'inline-flex';
+    input.disabled = false; sendBtn.disabled = false;
+    optsArea.style.display = 'none';
+    optsArea.innerHTML = '';
+    input.focus();
+
+    // 如果刚结束战斗
+    if (wasBattle && !inBattle) {
+      input.style.display = 'flex';
+      sendBtn.style.display = 'inline-flex';
+    }
+  }
+
+  // 生图——每次对话结束后生成场景图
+  if (!inBattle) {
+    const imgBox = document.getElementById('image-box');
+    imgBox.innerHTML = '<div class="placeholder" style="font-size:12px;opacity:.6;padding:12px">🎨 正在生成场景图...约12秒</div>';
+    const scene = extractScene(reply);
+    generateImage(scene).then(url => {
+      if (url) {
+        imgBox.innerHTML = `<div class="img-deco"></div><img src="${url}" alt="场景图" onerror="this.parentElement.innerHTML='<div class=placeholder>图片加载失败</div>'" style="max-width:100%;border:1px solid rgba(var(--pip-rgb),.2);border-radius:4px"><div class="img-deco"></div>`;
+      } else {
+        imgBox.innerHTML = '<div class="placeholder" style="font-size:11px;opacity:.4;padding:12px">场景图生成失败，请检查千问API额度</div>';
+      }
+    });
+  }
+}
+
+// 点击消息区域即时完成打字
+document.getElementById('output').addEventListener('click', (e) => {
+  if (typingTimer) {
+    flushAll();
+  }
+});
+
+document.getElementById('send').addEventListener('click', () => {
+  const input = document.getElementById('input');
+  if (inBattle) return; // 战斗中不能自由发送
+  send(input.value);
+  input.value = '';
+});
+
+document.getElementById('input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (inBattle) return;
+    const input = document.getElementById('input');
+    send(input.value);
+    input.value = '';
+  }
+});
+
+// 开场
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const intro = `2026年盛夏清晨，梧桐枝叶掩映着中传北门的金属门禁，冰冷的机械红光扫过每一位入校学子。整片白杨大陆安静得近乎诡异——没有喧闹、没有闲谈、没有嬉笑，只有规律划一的脚步声与头顶循环不休的AI广播。
+
+新晋入校的天选修士背负行囊走向门禁闸机。当智能识别系统扫描他的身份终端时，刺耳的警报骤然撕裂寂静。
+
+就在系统即将触发全域预警的瞬间，一道雪白身影从路旁草丛窜出——大白鹅奋力扑到修士身前，翅膀拍打手机终端。大黄狗从梧桐树下缓步走出，蓬松毛发沾染清晨露水。
+
+「三个月前，白杨智脑完成了终极迭代。纯白共情道韵被剔除。校园的温度被清零。」大黄狗抬爪指向半空，无数细碎莹白的光点随风浮动，「而你——是整片大陆唯一能看见它们的人。白杨大陆的救赎，全系于你一身。」
+
+📍 中传北门 | 📌 序章·北疆寒境 | ❤️ 100 💎 100 ⚡ 3 ✨ 0 | 🔷 ◇靛绿 ◇邃蓝 ◇赤红 ◇纯白 | 🐾 大黄狗
+
+A. 与大黄狗深入交谈，了解更多关于纯白道韵的事
+B. 观察北门附近的环境，寻找AI系统的漏洞
+C. 尝试感知大黄狗提到的纯白共情光点
+D. 跟随大白鹅，看看它想带你去哪里`;
+
+    const gmDiv = document.createElement('div');
+    gmDiv.className = 'msg gm';
+    gmDiv._fullText = intro;
+    document.getElementById('output').appendChild(gmDiv);
+
+    typeText(intro, gmDiv, 25, () => {
+      afterMessage(intro);
+    });
+
+    history.push({ role: 'assistant', content: intro });
+  }, 500);
+});
+</script>
+</body>
+</html>
