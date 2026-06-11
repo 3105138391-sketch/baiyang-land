@@ -53,13 +53,19 @@ header {
 }
 header h1 { font-size:20px; letter-spacing:5px; font-weight:400; text-shadow:0 0 8px rgba(var(--pip-rgb),.5) }
 header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
-#end-run {
-  position:absolute; right:0; top:10px; background:rgba(0,0,0,.24);
+.header-actions {
+  position:absolute; right:0; top:10px; display:flex; gap:8px;
+}
+#end-run,
+#audio-toggle {
+  background:rgba(0,0,0,.24);
   border:1px solid rgba(var(--pip-rgb),.34); color:var(--pip);
   padding:6px 10px; border-radius:4px; font-family:inherit; font-size:12px;
   cursor:pointer; letter-spacing:2px; transition:.2s;
 }
-#end-run:hover { background:rgba(var(--pip-rgb),.1); border-color:var(--pip) }
+#end-run:hover,
+#audio-toggle:hover,
+#audio-toggle.active { background:rgba(var(--pip-rgb),.1); border-color:var(--pip) }
 #output {
   flex:1; overflow-y:auto; padding:12px 0; scroll-behavior:smooth;
   -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
@@ -141,7 +147,9 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
   header { padding:10px 0 8px; margin-bottom:8px }
   header h1 { font-size:17px; letter-spacing:4px; line-height:1.25 }
   header p { font-size:9px; letter-spacing:2px }
-  #end-run { position:static; margin-top:8px; min-height:36px; padding:7px 12px }
+  .header-actions { position:static; justify-content:center; margin-top:8px }
+  #end-run,
+  #audio-toggle { min-height:36px; padding:7px 12px }
   .status-bar {
     flex-wrap:nowrap; overflow-x:auto; gap:10px; padding:7px 0; margin-bottom:8px;
     white-space:nowrap; -webkit-overflow-scrolling:touch; scrollbar-width:none;
@@ -171,9 +179,14 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
   .credits-roll .big-stat { font-size:20px }
   .credits-actions {
     left:12px; right:12px; bottom:calc(14px + env(safe-area-inset-bottom));
-    justify-content:center;
+    justify-content:center; padding:8px; border-radius:6px;
+    background:rgba(0,0,0,.68); border:1px solid rgba(var(--pip-rgb),.2);
+    backdrop-filter:blur(8px);
   }
-  .credits-actions button { min-height:40px; flex:1; max-width:140px }
+  .credits-actions button {
+    min-height:40px; flex:1 1 0; max-width:none; min-width:0; padding:8px 10px;
+    letter-spacing:1px;
+  }
 }
 @media (max-width:360px) {
   #app { padding-left:6px; padding-right:6px }
@@ -183,13 +196,14 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
   .status-bar { font-size:11px }
   .msg { font-size:13px }
   .btn-opt { font-size:12px; padding:9px 10px }
+  .credits-actions { flex-direction:column; gap:8px }
   .credits-roll p { font-size:13px }
 }
 @media (max-height:560px) and (orientation:landscape) {
   #app { padding-top:6px; padding-bottom:6px }
   header { padding:6px 0; margin-bottom:6px }
   header h1 { font-size:15px }
-  header p, #end-run { display:none }
+  header p, .header-actions { display:none }
   .status-bar { padding:5px 0; margin-bottom:6px }
   #input-area { padding:6px 0 }
   .msg-image { max-height:46dvh; aspect-ratio:16/9 }
@@ -204,7 +218,10 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
     <header>
       <h1>白 杨 大 陆</h1>
       <p>智械低语 · AI 文字跑团</p>
-      <button id="end-run" type="button">结束</button>
+      <div class="header-actions">
+        <button id="audio-toggle" type="button" aria-pressed="false" title="开启或关闭背景音和打字音效">音效</button>
+        <button id="end-run" type="button">结束</button>
+      </div>
     </header>
     <div class="status-bar" id="status">
       <span>📍 中传北门</span><span>📌 序章</span><span>❤️ 100</span><span>💎 100</span><span>✨ 0</span>
@@ -352,6 +369,33 @@ let inBattle = false; // 战斗状态标记
 let typingTimer = null; // 打字机定时器
 let currentSceneId = 'wutong';
 let gameEnded = false;
+let audioCtx = null;
+let masterGain = null;
+let bgmGain = null;
+let typeGain = null;
+let bgmTimer = null;
+let audioEnabled = false;
+let audioMode = 'normal';
+let typeSoundCounter = 0;
+const DEGREE_FREQ_D_MAJOR = {
+  '1':293.66, '2':329.63, '3':369.99, '4':392.00,
+  '5':440.00, '6':493.88, '7':554.37,
+  '1h':587.33, '2h':659.25, '3h':739.99,
+  '5l':220.00, '6l':246.94
+};
+const SCHOOL_SONG_MOTIF = [
+  { n:'5', d:0.36 }, { n:'6', d:0.34 }, { n:'1h', d:0.52 },
+  { n:'2h', d:0.34 }, { n:'2h', d:0.32 }, { n:'1h', d:0.34 }, { n:'6', d:0.50 },
+  { n:'5', d:0.42 }, { n:'5', d:0.42 },
+  { n:'5', d:0.34 }, { n:'6', d:0.34 }, { n:'1h', d:0.50 },
+  { n:'2h', d:0.34 }, { n:'2h', d:0.32 }, { n:'1h', d:0.34 }, { n:'2h', d:0.48 },
+  { n:'5', d:0.40 }, { n:'5', d:0.40 },
+  { n:'3h', d:0.34 }, { n:'6', d:0.34 }, { n:'6', d:0.42 },
+  { n:'3h', d:0.34 }, { n:'2h', d:0.34 }, { n:'1h', d:0.46 },
+  { n:'6', d:0.38 }, { n:'6', d:0.38 },
+  { n:'6', d:0.34 }, { n:'3h', d:0.34 }, { n:'3h', d:0.40 },
+  { n:'2h', d:0.34 }, { n:'1h', d:0.34 }, { n:'6', d:0.62 }
+];
 const gameProgress = {
   turns: 0,
   main: new Set(),
@@ -361,6 +405,157 @@ const gameProgress = {
   scenes: new Set(['梧桐大道']),
   playerActions: []
 };
+
+function initAudio() {
+  if (audioCtx) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  audioCtx = new AudioContextClass();
+  masterGain = audioCtx.createGain();
+  bgmGain = audioCtx.createGain();
+  typeGain = audioCtx.createGain();
+  masterGain.gain.value = 0.58;
+  bgmGain.gain.value = 0.22;
+  typeGain.gain.value = 0.08;
+  bgmGain.connect(masterGain);
+  typeGain.connect(masterGain);
+  masterGain.connect(audioCtx.destination);
+}
+
+async function resumeAudio() {
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+}
+
+function playTone(freq, start, duration, destination, options = {}) {
+  if (!audioCtx || !destination) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = options.type || 'sine';
+  osc.frequency.setValueAtTime(freq, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(options.gain || 0.18, start + (options.attack || 0.025));
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.connect(gain);
+  gain.connect(destination);
+  osc.start(start);
+  osc.stop(start + duration + 0.04);
+}
+
+function playNoiseHit(start, duration, gainValue = 0.08) {
+  if (!audioCtx || !bgmGain) return;
+  const length = Math.max(1, Math.floor(audioCtx.sampleRate * duration));
+  const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+  }
+  const source = audioCtx.createBufferSource();
+  const filter = audioCtx.createBiquadFilter();
+  const gain = audioCtx.createGain();
+  filter.type = 'lowpass';
+  filter.frequency.value = 900;
+  gain.gain.setValueAtTime(gainValue, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(bgmGain);
+  source.start(start);
+}
+
+function degreeToFreq(degree, octaveShift = 0) {
+  const base = DEGREE_FREQ_D_MAJOR[degree] || DEGREE_FREQ_D_MAJOR['1'];
+  return base * Math.pow(2, octaveShift);
+}
+
+function scheduleNormalPhrase(start) {
+  let cursor = start;
+  SCHOOL_SONG_MOTIF.forEach((note, index) => {
+    const freq = degreeToFreq(note.n);
+    const accent = index % 3 === 0;
+    playTone(freq, cursor, note.d * 0.88, bgmGain, {
+      type:'triangle',
+      gain: accent ? 0.14 : 0.105,
+      attack:0.035
+    });
+    if (accent) {
+      const root = index % 6 === 0 ? DEGREE_FREQ_D_MAJOR['1'] : DEGREE_FREQ_D_MAJOR['5'];
+      playTone(root / 2, cursor, Math.max(0.78, note.d * 1.7), bgmGain, {
+        type:'sine',
+        gain:0.045,
+        attack:0.045
+      });
+    }
+    cursor += note.d;
+  });
+}
+
+function scheduleBattlePhrase(start) {
+  const battleMotif = SCHOOL_SONG_MOTIF.slice(0, 16);
+  battleMotif.forEach((note, index) => {
+    const when = start + index * 0.26;
+    const freq = degreeToFreq(note.n, -1);
+    playTone(freq, when, 0.18, bgmGain, { type:'sawtooth', gain:0.105, attack:0.01 });
+    if (index % 2 === 0) {
+      playTone(freq / 2, when, 0.32, bgmGain, { type:'square', gain:0.04, attack:0.006 });
+      playNoiseHit(when, 0.12, 0.055);
+    }
+  });
+}
+
+function startBgmLoop(mode = audioMode) {
+  if (!audioEnabled || !audioCtx || !bgmGain) return;
+  if (bgmTimer) clearInterval(bgmTimer);
+  audioMode = mode;
+  const schedule = () => {
+    const start = audioCtx.currentTime + 0.05;
+    if (audioMode === 'battle') scheduleBattlePhrase(start);
+    else scheduleNormalPhrase(start);
+  };
+  schedule();
+  bgmTimer = setInterval(schedule, audioMode === 'battle' ? 4300 : 11800);
+}
+
+function stopBgmLoop() {
+  if (bgmTimer) clearInterval(bgmTimer);
+  bgmTimer = null;
+}
+
+async function toggleAudio() {
+  audioEnabled = !audioEnabled;
+  const btn = document.getElementById('audio-toggle');
+  if (audioEnabled) {
+    document.body.dataset.audio = 'on';
+    btn.classList.add('active');
+    btn.textContent = '静音';
+    btn.setAttribute('aria-pressed', 'true');
+    await resumeAudio();
+    startBgmLoop(audioMode);
+  } else {
+    stopBgmLoop();
+    document.body.dataset.audio = 'off';
+    btn.classList.remove('active');
+    btn.textContent = '音效';
+    btn.setAttribute('aria-pressed', 'false');
+  }
+}
+
+function setAudioMode(mode) {
+  if (audioMode === mode) return;
+  audioMode = mode;
+  document.body.dataset.audioMode = mode;
+  if (audioEnabled) startBgmLoop(mode);
+}
+
+function playTypingSound(char) {
+  if (!audioEnabled || !audioCtx || !typeGain || !char.trim()) return;
+  typeSoundCounter += 1;
+  if (typeSoundCounter % 2 !== 0) return;
+  const now = audioCtx.currentTime;
+  const freq = 880 + Math.random() * 240;
+  playTone(freq, now, 0.018, typeGain, { type:'square', gain:0.055, attack:0.002 });
+}
 
 function updateStatus(text) {
   const status = document.getElementById('status');
@@ -447,6 +642,7 @@ function typeText(text, container, speed = 35, onDone) {
   function tick() {
     if (i < chars.length) {
       span.textContent += chars[i];
+      playTypingSound(chars[i]);
       i++;
       const out = document.getElementById('output');
       out.scrollTop = out.scrollHeight;
@@ -696,6 +892,7 @@ function buildEndingCredits() {
 
 function showEndingCredits() {
   flushAll();
+  setAudioMode('normal');
   gameEnded = true;
   const overlay = document.getElementById('credits-overlay');
   const roll = document.getElementById('credits-roll');
@@ -791,6 +988,7 @@ function afterMessage(reply) {
   // 检测是否进入战斗
   const wasBattle = inBattle;
   inBattle = detectBattle(reply);
+  setAudioMode(inBattle ? 'battle' : 'normal');
   const opts = getOptions(reply);
 
   if (inBattle && opts.length >= 4) {
@@ -838,6 +1036,11 @@ document.getElementById('output').addEventListener('click', (e) => {
 });
 
 document.getElementById('end-run').addEventListener('click', showEndingCredits);
+document.getElementById('audio-toggle').addEventListener('click', () => {
+  toggleAudio().catch(e => console.warn('音频启动失败:', e));
+});
+document.body.dataset.audio = 'off';
+document.body.dataset.audioMode = audioMode;
 document.getElementById('continue-run').addEventListener('click', hideEndingCredits);
 document.getElementById('restart-run').addEventListener('click', () => {
   window.location.reload();
