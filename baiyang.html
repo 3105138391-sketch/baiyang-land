@@ -129,6 +129,13 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
   cursor:pointer;
 }
 .credits-actions button:hover { border-color:var(--pip); background:rgba(var(--pip-rgb),.1) }
+.site-credit {
+  position:fixed; right:12px; bottom:8px; z-index:3;
+  color:rgba(var(--pip-soft-rgb),.34); font-size:10px; line-height:1;
+  text-decoration:none; letter-spacing:.4px; text-shadow:0 0 8px rgba(0,0,0,.6);
+  transition:opacity .2s ease, color .2s ease; opacity:.72;
+}
+.site-credit:hover { color:rgba(var(--pip-soft-rgb),.62); opacity:1 }
 @keyframes creditsRoll {
   0% { transform:translate(-50%, 0) }
   100% { transform:translate(-50%, -230%) }
@@ -172,6 +179,10 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
   }
   .btn-opt { min-height:44px; padding:10px 12px; font-size:13px }
   .msg-image { width:100%; aspect-ratio:4/3; max-height:52dvh }
+  .site-credit {
+    right:14px; bottom:calc(78px + env(safe-area-inset-bottom));
+    font-size:9px; color:rgba(var(--pip-soft-rgb),.24);
+  }
   .credits-roll { width:min(90vw,560px); top:70%; animation-duration:42s }
   .credits-roll h2 { font-size:22px; letter-spacing:4px }
   .credits-roll h3 { font-size:13px; letter-spacing:3px; margin:28px 0 10px }
@@ -207,6 +218,7 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
   .status-bar { padding:5px 0; margin-bottom:6px }
   #input-area { padding:6px 0 }
   .msg-image { max-height:46dvh; aspect-ratio:16/9 }
+  .site-credit { display:none }
 }
 </style>
 </head>
@@ -234,6 +246,7 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
     </div>
   </div>
 </div>
+<a class="site-credit" href="https://github.com/3105138391-sketch" target="_blank" rel="noopener noreferrer">© 3105138391-sketch</a>
 <div id="credits-overlay" class="credits-overlay" aria-hidden="true">
   <div id="credits-roll" class="credits-roll"></div>
   <div class="credits-actions">
