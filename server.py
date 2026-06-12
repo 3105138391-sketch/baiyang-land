@@ -10,10 +10,49 @@ PORT = int(os.environ.get("PORT", 8080))
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 DASHSCOPE_CREATE_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
 DASHSCOPE_TASK_URL = "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+PUBLIC_ASSET_PREFIX = "assets/"
+PUBLIC_ASSET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".ico", ".mp3", ".wav", ".ogg"}
+BLOCKED_FILE_NAMES = {
+    "server.py",
+    "Dockerfile",
+    "render.yaml",
+    "requirements.txt",
+    "README.md",
+    ".dockerignore",
+    ".env",
+    ".env.example",
+}
+BLOCKED_PATH_PARTS = {"..", ".git", "__pycache__", ".venv", "venv", "node_modules"}
+BLOCKED_EXTENSIONS = {
+    ".py",
+    ".pyc",
+    ".env",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".md",
+    ".txt",
+    ".log",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".rar",
+    ".7z",
+}
 
 Handler = http.server.SimpleHTTPRequestHandler
 
 class MyHandler(Handler):
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -21,6 +60,51 @@ class MyHandler(Handler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_not_found(self, head_only=False):
+        body = b"Not Found"
+        self.send_response(404)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
+
+    def _is_public_asset(self, requested_path):
+        if not requested_path.startswith(PUBLIC_ASSET_PREFIX):
+            return False
+        _, ext = os.path.splitext(requested_path.lower())
+        return ext in PUBLIC_ASSET_EXTENSIONS
+
+    def _is_blocked_path(self, requested_path):
+        normalized = requested_path.strip("/")
+        if not normalized:
+            return False
+        parts = [part for part in normalized.split("/") if part]
+        if any(part in BLOCKED_PATH_PARTS or part.startswith(".") for part in parts):
+            return True
+        filename = parts[-1]
+        if filename in BLOCKED_FILE_NAMES:
+            return True
+        _, ext = os.path.splitext(filename.lower())
+        return ext in BLOCKED_EXTENSIONS
+
+    def _route_static_request(self, head_only=False):
+        requested_path = unquote(urlparse(self.path).path).lstrip("/")
+        if requested_path and self._is_blocked_path(requested_path):
+            return self._send_not_found(head_only=head_only)
+        if requested_path and os.path.isfile(requested_path):
+            if not self._is_public_asset(requested_path):
+                return self._send_not_found(head_only=head_only)
+            if head_only:
+                return Handler.do_HEAD(self)
+            return Handler.do_GET(self)
+
+        # 非静态资源路径都返回 baiyang.html，方便 Render 直接打开根路径
+        self.path = "/baiyang.html"
+        if head_only:
+            return Handler.do_HEAD(self)
+        return Handler.do_GET(self)
 
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -59,13 +143,21 @@ class MyHandler(Handler):
         if self.path.startswith("/api/"):
             self._send_json(404, {"message": "接口不存在"})
             return
-        requested_path = unquote(urlparse(self.path).path).lstrip("/")
-        if requested_path and os.path.isfile(requested_path):
-            return Handler.do_GET(self)
+        return self._route_static_request()
 
-        # 非静态资源路径都返回 baiyang.html，方便 Render 直接打开根路径
-        self.path = "/baiyang.html"
-        return Handler.do_GET(self)
+    def do_HEAD(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", "12")
+            self.end_headers()
+            return
+        if self.path.startswith("/api/"):
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        return self._route_static_request(head_only=True)
 
     def do_POST(self):
         if self.path == "/api/chat":
