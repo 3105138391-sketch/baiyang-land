@@ -442,6 +442,21 @@ async function resumeAudio() {
   if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
 }
 
+function setMasterVolume(value) {
+  if (!audioCtx || !masterGain) return;
+  const now = audioCtx.currentTime;
+  masterGain.gain.cancelScheduledValues(now);
+  masterGain.gain.setTargetAtTime(value, now, 0.025);
+}
+
+function silenceMasterNow() {
+  if (!audioCtx || !masterGain) return;
+  const now = audioCtx.currentTime;
+  masterGain.gain.cancelScheduledValues(now);
+  masterGain.gain.setValueAtTime(0.0001, now);
+  masterGain.gain.value = 0.0001;
+}
+
 function playTone(freq, start, duration, destination, options = {}) {
   if (!audioCtx || !destination) return;
   const osc = audioCtx.createOscillator();
@@ -523,6 +538,7 @@ function startBgmLoop(mode = audioMode) {
   if (!audioEnabled || !audioCtx || !bgmGain) return;
   if (bgmTimer) clearInterval(bgmTimer);
   audioMode = mode;
+  setMasterVolume(0.58);
   const schedule = () => {
     const start = audioCtx.currentTime + 0.05;
     if (audioMode === 'battle') scheduleBattlePhrase(start);
@@ -532,28 +548,54 @@ function startBgmLoop(mode = audioMode) {
   bgmTimer = setInterval(schedule, audioMode === 'battle' ? 4300 : 11800);
 }
 
-function stopBgmLoop() {
+function stopBgmLoop(resetChannel = false) {
   if (bgmTimer) clearInterval(bgmTimer);
   bgmTimer = null;
+  if (resetChannel && audioCtx && bgmGain && masterGain) {
+    try { bgmGain.disconnect(); } catch (e) {}
+    bgmGain = audioCtx.createGain();
+    bgmGain.gain.value = 0.22;
+    bgmGain.connect(masterGain);
+  }
 }
 
-async function toggleAudio() {
-  audioEnabled = !audioEnabled;
+function updateAudioButton() {
   const btn = document.getElementById('audio-toggle');
   if (audioEnabled) {
     document.body.dataset.audio = 'on';
     btn.classList.add('active');
     btn.textContent = '静音';
     btn.setAttribute('aria-pressed', 'true');
-    await resumeAudio();
-    startBgmLoop(audioMode);
   } else {
-    stopBgmLoop();
     document.body.dataset.audio = 'off';
     btn.classList.remove('active');
     btn.textContent = '音效';
     btn.setAttribute('aria-pressed', 'false');
   }
+}
+
+async function enableAudio() {
+  audioEnabled = true;
+  updateAudioButton();
+  await resumeAudio();
+  if (!audioEnabled) return;
+  setMasterVolume(0.58);
+  startBgmLoop(audioMode);
+}
+
+async function disableAudio() {
+  audioEnabled = false;
+  stopBgmLoop(true);
+  silenceMasterNow();
+  updateAudioButton();
+  if (audioCtx && audioCtx.state === 'running') {
+    try { await audioCtx.suspend(); } catch (e) {}
+  }
+}
+
+async function toggleAudio() {
+  if (audioEnabled) await disableAudio();
+  else await enableAudio();
 }
 
 function setAudioMode(mode) {
@@ -693,6 +735,7 @@ function flushAll() {
 // 判断是否进入战斗
 function detectBattle(reply) {
   return reply.includes('⚔') || reply.includes('道韵净化战') ||
+         reply.includes('战斗开始') || reply.includes('战斗模式') ||
          reply.includes('算法教务核心') && (reply.includes('Boss') || reply.includes('异化值')) ||
          reply.includes('技术孤岛') && reply.includes('异化值') ||
          reply.includes('创作失语') && reply.includes('异化值') ||
@@ -708,6 +751,36 @@ function getOptions(reply) {
     if (m) opts.push(m[1].trim());
   }
   return opts;
+}
+
+function stripReplyOptions(reply) {
+  return reply
+    .split('\n')
+    .filter(line => !/^[A-D][.、．]\s*/.test(line.trim()))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function renderOptionButtons(opts, isBattleMode) {
+  const optsArea = document.getElementById('opts-area');
+  optsArea.innerHTML = '';
+  if (!opts.length) {
+    optsArea.style.display = 'none';
+    return;
+  }
+  optsArea.style.display = 'flex';
+  opts.slice(0, 4).forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = isBattleMode ? 'btn-opt battle' : 'btn-opt';
+    btn.textContent = String.fromCharCode(65 + i) + '. ' + opt;
+    btn.addEventListener('click', () => {
+      optsArea.style.display = 'none';
+      optsArea.innerHTML = '';
+      send(opt);
+    });
+    optsArea.appendChild(btn);
+  });
 }
 
 // 千问生图
@@ -806,9 +879,10 @@ function updateStatusFromReply(reply) {
 
 function renderAssistantMessage(reply, imagePromise, speed = 28) {
   const out = document.getElementById('output');
+  const displayReply = stripReplyOptions(reply) || reply;
   const gmDiv = document.createElement('div');
   gmDiv.className = 'msg gm';
-  gmDiv._fullText = reply;
+  gmDiv._fullText = displayReply;
   out.appendChild(gmDiv);
   recordProgress(reply);
   const imageSlot = document.createElement('div');
@@ -822,7 +896,7 @@ function renderAssistantMessage(reply, imagePromise, speed = 28) {
     out.scrollTop = out.scrollHeight;
   };
 
-  typeText(reply, gmDiv, speed, () => {
+  typeText(displayReply, gmDiv, speed, () => {
     revealInlineImage();
     afterMessage(reply);
   });
@@ -1010,28 +1084,14 @@ function afterMessage(reply) {
     // 战斗模式：只显示固定选项，禁用自由输入
     input.style.display = 'none';
     sendBtn.style.display = 'none';
-    optsArea.style.display = 'flex';
-
-    optsArea.innerHTML = '';
-    opts.slice(0, 4).forEach((opt, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'btn-opt battle';
-      btn.textContent = String.fromCharCode(65 + i) + '. ' + opt;
-      btn.addEventListener('click', () => {
-        optsArea.style.display = 'none';
-        optsArea.innerHTML = '';
-        send(opt);
-      });
-      optsArea.appendChild(btn);
-    });
+    renderOptionButtons(opts, true);
     input.disabled = true; sendBtn.disabled = true;
   } else {
-    // 普通模式：恢复自由输入
+    // 普通模式：恢复自由输入，同时把建议选项渲染成按钮
     input.style.display = 'flex';
     sendBtn.style.display = 'inline-flex';
     input.disabled = false; sendBtn.disabled = false;
-    optsArea.style.display = 'none';
-    optsArea.innerHTML = '';
+    renderOptionButtons(opts, false);
     input.focus();
 
     // 如果刚结束战斗
