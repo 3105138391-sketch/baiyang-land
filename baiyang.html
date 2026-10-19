@@ -241,9 +241,11 @@ header p { font-size:10px; opacity:.6; margin-top:2px; letter-spacing:3px }
       <span>📍 中传北门</span><span>📌 序章</span><span>❤️ 100</span><span>💎 100</span><span>✨ 0</span>
     </div>
     <div id="output"></div>
+    <button id="skip-typing" class="btn-opt" type="button" style="display:none">立即显示全文</button>
+    <div id="save-notice" class="msg system" role="status" style="display:none"></div>
     <div id="opts-area" style="display:none"></div>
     <div id="input-area">
-      <input id="input" type="text" placeholder="> 输入你的行动..." autofocus>
+      <input id="input" type="text" maxlength="2000" placeholder="> 输入你的行动..." autofocus>
       <button id="send">发 送</button>
     </div>
   </div>
@@ -340,10 +342,6 @@ D. 选项四
 — 不跳过主线阶段、不直接发放碎片、不把AI写成邪恶反派`;
 
 const history = [{ role: 'system', content: SYSTEM }];
-const SCENE_PROMPT_SYSTEM = `你是《白杨大陆：智械低语》的分镜提示生成器。
-根据最近剧情和玩家最新行动，先写一条给生图模型使用的画面提示词。
-只输出一句中文，不要解释，不要选项，不要状态栏，不超过80字。
-提示词要包含地点、主体角色、动作、光线、情绪；保持治愈系校园奇幻风格，避免血腥暴力。`;
 const SCENE_BACKGROUNDS = [
   { id:'final-main', label:'主楼之巅', image:'assets/scenes/building-2-dark.jpg', keywords:['主楼之巅','终局','白杨智脑','XNCR','最终'] },
   { id:'south-gate', label:'中传南门', image:'assets/scenes/south-gate.jpg', keywords:['南门','中传南门','离开白杨大陆'] },
@@ -380,6 +378,9 @@ const FRAGMENTS = [
   { id:'red', label:'赤红碎片', keywords:['赤红碎片','赤红◆'] },
   { id:'white', label:'纯白碎片', keywords:['纯白碎片','纯白◆'] }
 ];
+const SAVE_KEY = 'baiyang.adventure.v1';
+let busy = false, pendingTurn = null, lastOptions = [], statusText = '';
+let activeTyping = null, pendingNode = null;
 let inBattle = false; // 战斗状态标记
 let typingTimer = null; // 打字机定时器
 let currentSceneId = 'wutong';
@@ -617,6 +618,7 @@ function playTypingSound(char) {
 function updateStatus(text) {
   const status = document.getElementById('status');
   if (!text) return;
+  statusText = text;
   status.innerHTML = '';
   const parts = text.replace(/[|｜]/g, '|').split('|');
   parts.forEach(p => {
@@ -682,6 +684,8 @@ function typeText(text, container, speed = 35, onDone) {
   const chars = [...text]; // 正确处理中文
   const span = document.createElement('span');
   container._typingDone = false;
+  activeTyping = container;
+  document.getElementById('skip-typing').style.display = 'block';
 
   // 给战斗消息加特殊样式
   if (inBattle) span.style.color = '#e06c75';
@@ -692,6 +696,8 @@ function typeText(text, container, speed = 35, onDone) {
     if (container._typingDone) return;
     container._typingDone = true;
     typingTimer = null;
+    activeTyping = null;
+    document.getElementById('skip-typing').style.display = 'none';
     span.classList.add('done');
     if (onDone) onDone();
   };
@@ -720,16 +726,10 @@ function stopTyping() {
 // 即时完成当前打字
 function flushAll() {
   stopTyping();
-  // 找到所有正在打字的span，直接显示完整文字
-  document.querySelectorAll('.msg.gm span:not(.done)').forEach(s => {
-    // 找到父元素里应该显示的全部文字
-    const parent = s.closest('.msg.gm');
-    if (parent && parent._fullText) {
-      s.textContent = parent._fullText;
-      s.classList.add('done');
-      if (parent._finishTyping) parent._finishTyping();
-    }
-  });
+  if (activeTyping) {
+    activeTyping.firstChild.textContent = activeTyping._fullText;
+    activeTyping._finishTyping();
+  }
 }
 
 // 判断是否进入战斗
@@ -747,7 +747,7 @@ function getOptions(reply) {
   const lines = reply.split('\n');
   const opts = [];
   for (const line of lines) {
-    const m = line.match(/^[A-D][.、．]\s*(.+)/);
+    const m = line.match(/^\s*[A-DＡ-Ｄ][.、．:：)）]\s*(.+)/i);
     if (m) opts.push(m[1].trim());
   }
   return opts;
@@ -756,7 +756,7 @@ function getOptions(reply) {
 function stripReplyOptions(reply) {
   return reply
     .split('\n')
-    .filter(line => !/^[A-D][.、．]\s*/.test(line.trim()))
+    .filter(line => !/^\s*[A-DＡ-Ｄ][.、．:：)）]\s*/i.test(line.trim()))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -773,71 +773,41 @@ function renderOptionButtons(opts, isBattleMode) {
   opts.slice(0, 4).forEach((opt, i) => {
     const btn = document.createElement('button');
     btn.className = isBattleMode ? 'btn-opt battle' : 'btn-opt';
+    btn.disabled = busy || !!pendingTurn;
     btn.textContent = String.fromCharCode(65 + i) + '. ' + opt;
     btn.addEventListener('click', () => {
-      optsArea.style.display = 'none';
-      optsArea.innerHTML = '';
-      send(opt);
+      if (!busy && !pendingTurn) send(opt);
     });
     optsArea.appendChild(btn);
   });
 }
 
-// 千问生图
-async function generateImage(sceneDescription) {
+// 请求超时独立于叙事和图片展示。
+async function fetchJSON(url, body, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const resp = await fetch(QWEN_IMG_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scene: sceneDescription })
-    });
-
+    const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body), signal:controller.signal});
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      console.error('生图接口错误:', data);
-      return null;
-    }
-    return data.url || null;
-  } catch (e) {
-    console.error('生图失败:', e);
-    return null;
-  }
+    if (!resp.ok) throw new Error(data.message || data.error?.message ||
+      (resp.status === 429 ? '请求较多，请稍后重试。' : '连接暂时中断，请重试。'));
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('等待响应超时，请重试。');
+    throw error;
+  } finally { clearTimeout(timer); }
 }
-
+async function generateImage(sceneDescription) {
+  try { return (await fetchJSON(QWEN_IMG_URL, {scene:sceneDescription}, 90000)).url || null; }
+  catch (_) { return null; }
+}
 async function callChat(messages, options = {}) {
-  const resp = await fetch(DEEPSEEK_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: options.model || 'deepseek-chat',
-      messages,
-      temperature: options.temperature ?? .85,
-      max_tokens: options.max_tokens ?? 1500
-    })
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.choices?.[0]?.message?.content) {
-    console.error('对话接口错误:', data);
-    throw new Error(data.message || data.error?.message || 'AI响应格式异常');
-  }
-  return data.choices[0].message.content.trim();
-}
-
-async function requestScenePrompt() {
-  const sceneMessages = [
-    { role: 'system', content: SCENE_PROMPT_SYSTEM },
-    ...history.slice(1).slice(-8),
-    { role: 'user', content: '请为接下来这一幕生成生图提示词。只输出提示词。' }
-  ];
-  const prompt = await callChat(sceneMessages, { temperature: .55, max_tokens: 120 });
-  return prompt
-    .replace(/^[「"']|[」"']$/g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/^[A-D][.、．]\s*/, '')
-    .slice(0, 160)
-    .trim();
+  const data = await fetchJSON(DEEPSEEK_URL, {model:'deepseek-chat', messages,
+    temperature:options.temperature ?? .85, max_tokens:options.max_tokens ?? 1500}, 60000);
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('未收到完整剧情，请重试。');
+  return content.trim();
 }
 
 function setImagePlaceholder(slot, text) {
@@ -848,24 +818,22 @@ function setImagePlaceholder(slot, text) {
   slot.appendChild(div);
 }
 
-function attachImage(slot, imagePromise) {
-  setImagePlaceholder(slot, '正在生成场景图...');
-  imagePromise.then(url => {
-    if (!url) {
-      setImagePlaceholder(slot, '场景图生成失败，请检查服务端 DASHSCOPE_API_KEY、额度或模型权限');
-      return;
-    }
+function attachImage(slot, imagePromise, scene) {
+  const fallback = () => {
     slot.innerHTML = '';
     const img = document.createElement('img');
-    img.alt = '场景图';
-    img.loading = 'lazy';
-    img.onerror = () => setImagePlaceholder(slot, '图片加载失败');
-    img.src = url;
+    img.alt = scene.label + ' · 校园实景'; img.src = scene.image;
+    img.onerror = () => setImagePlaceholder(slot, '场景图暂不可用，冒险继续。');
     slot.appendChild(img);
-  }).catch(e => {
-    console.error('图片渲染失败:', e);
-    setImagePlaceholder(slot, '场景图生成失败，请检查服务端 DASHSCOPE_API_KEY、额度或模型权限');
-  });
+  };
+  fallback();
+  imagePromise.then(url => {
+    if (!url) return;
+    const img = document.createElement('img');
+    img.alt = scene.label + ' · 剧情场景';
+    img.onload = () => { slot.innerHTML = ''; slot.appendChild(img); };
+    img.onerror = () => {}; img.src = url;
+  }).catch(() => {});
 }
 
 function updateStatusFromReply(reply) {
@@ -881,27 +849,24 @@ function renderAssistantMessage(reply, imagePromise, speed = 28) {
   const out = document.getElementById('output');
   const displayReply = stripReplyOptions(reply) || reply;
   const gmDiv = document.createElement('div');
-  gmDiv.className = 'msg gm';
-  gmDiv._fullText = displayReply;
+  gmDiv.className = 'msg gm'; gmDiv._fullText = displayReply;
   out.appendChild(gmDiv);
+  const previousScene = currentSceneId, previousBattle = inBattle;
   recordProgress(reply);
-  const imageSlot = document.createElement('div');
-  imageSlot.className = 'msg-image';
-  let imageAttached = false;
-  const revealInlineImage = () => {
-    if (imageAttached) return;
-    imageAttached = true;
-    gmDiv.appendChild(imageSlot);
-    attachImage(imageSlot, imagePromise || generateImage(extractScene(reply)));
-    out.scrollTop = out.scrollHeight;
-  };
-
-  typeText(displayReply, gmDiv, speed, () => {
-    revealInlineImage();
-    afterMessage(reply);
-  });
-
+  inBattle = detectBattle(reply);
+  lastOptions = optionsForReply(reply);
   updateStatusFromReply(reply);
+  // 完整回复先存盘；刷新不会重放行动或重复累加进度。
+  saveGame();
+  const needsImage = gameProgress.turns === 1 || previousScene !== currentSceneId ||
+    (!previousBattle && inBattle) || /(?:获得|集齐|收集到).{0,12}碎片|战斗胜利|净化成功/.test(reply);
+  typeText(displayReply, gmDiv, speed, () => { busy = false; afterMessage(reply); });
+  if (needsImage) {
+    const slot = document.createElement('div'); slot.className = 'msg-image';
+    gmDiv.appendChild(slot);
+    const scene = SCENE_BACKGROUNDS.find(s => s.id === currentSceneId);
+    attachImage(slot, imagePromise || generateImage(extractScene(reply)), scene);
+  }
   out.scrollTop = out.scrollHeight;
 }
 
@@ -1001,108 +966,142 @@ function hideEndingCredits() {
   document.getElementById('input').focus();
 }
 
+const BATTLE_OPTIONS = ['风华斩（1 AP / 10 SP，伤害 15）', '雷鸣破（2 AP / 20 SP，伤害 25，破盾 20）', '共情治愈（2 AP / 3 光点，恢复 HP 30、SP 20）', '说服'];
+function optionsForReply(reply) {
+  const opts = getOptions(reply);
+  return detectBattle(reply) && opts.length < 4 ? [...BATTLE_OPTIONS] : opts;
+}
+function saveGame() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({version:1, history:history.slice(1),
+      progress:Object.fromEntries(Object.entries(gameProgress).map(([k,v]) => [k,v instanceof Set ? [...v] : v])),
+      inBattle, lastOptions, statusText, currentSceneId, pendingTurn}));
+  } catch (_) {
+    const notice = document.getElementById('save-notice');
+    notice.textContent = '本机存档暂不可用；本页仍可继续游玩，刷新可能丢失进度。';
+    notice.style.display = 'block';
+  }
+}
+function readSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data.version !== 1 || !Array.isArray(data.history) || !data.history.length ||
+      !data.history.every(m => ['user','assistant'].includes(m.role) && typeof m.content === 'string') ||
+      typeof data.statusText !== 'string' || typeof data.inBattle !== 'boolean' ||
+      !data.progress || !Number.isFinite(data.progress.turns) ||
+      !['main','side','fragments','locations','scenes','playerActions'].every(k => Array.isArray(data.progress[k])) ||
+      !Array.isArray(data.lastOptions) || !data.lastOptions.every(x => typeof x === 'string') ||
+      !SCENE_BACKGROUNDS.some(s => s.id === data.currentSceneId) ||
+      (data.pendingTurn !== null && typeof data.pendingTurn !== 'string')) throw new Error('invalid save');
+    return data;
+  } catch (_) {
+    const notice = document.getElementById('save-notice');
+    notice.textContent = '无法读取本机存档，将从序章开始。'; notice.style.display = 'block';
+    return null;
+  }
+}
+function addPlayerMessage(text) {
+  const node = document.createElement('div'); node.className = 'msg player'; node.textContent = text;
+  document.getElementById('output').appendChild(node); return node;
+}
+function restoreGame(data) {
+  history.splice(1, history.length, ...data.history);
+  for (const key of Object.keys(gameProgress)) gameProgress[key] = gameProgress[key] instanceof Set ?
+    new Set(data.progress[key]) : data.progress[key];
+  inBattle = !!data.inBattle; lastOptions = data.lastOptions; pendingTurn = data.pendingTurn;
+  currentSceneId = ''; setSceneBackground(SCENE_BACKGROUNDS.find(s => s.id === data.currentSceneId));
+  updateStatus(data.statusText || '');
+  const out = document.getElementById('output'); out.innerHTML = '';
+  for (const message of data.history) {
+    if (message.role === 'user') addPlayerMessage(message.content);
+    else { const node = document.createElement('div'); node.className = 'msg gm';
+      node.textContent = stripReplyOptions(message.content); out.appendChild(node); }
+  }
+  busy = false;
+  if (pendingTurn) { pendingNode = addPlayerMessage(pendingTurn); showRecovery('上次行动尚未完成，可以重试或返回原选项。'); }
+  else showControls();
+  out.scrollTop = out.scrollHeight;
+}
+function showControls() {
+  const input = document.getElementById('input'), button = document.getElementById('send');
+  input.style.display = inBattle ? 'none' : 'flex'; button.style.display = inBattle ? 'none' : 'inline-flex';
+  input.disabled = button.disabled = busy || !!pendingTurn || inBattle;
+  renderOptionButtons(lastOptions, inBattle);
+  setAudioMode(inBattle ? 'battle' : 'normal');
+}
+function showRecovery(message) {
+  const area = document.getElementById('opts-area'); area.innerHTML = ''; area.style.display = 'flex';
+  const note = document.createElement('div'); note.className = 'msg system'; note.textContent = message; area.appendChild(note);
+  for (const [label, action] of [['重试本次行动', () => executePending()], ['返回原选项', () => {
+    if (busy) return; pendingTurn = null; pendingNode?.remove(); pendingNode = null; saveGame(); showControls();
+  }]]) {
+    const button = document.createElement('button'); button.className = 'btn-opt'; button.textContent = label;
+    button.addEventListener('click', action); area.appendChild(button);
+  }
+}
 async function send(msg) {
   const cleanMsg = msg.trim();
-  if (!cleanMsg || gameEnded) return;
-  if (['结束','退出','谢幕','end','END'].includes(cleanMsg)) {
-    showEndingCredits();
+  if (!cleanMsg || gameEnded || busy || pendingTurn) return;
+  if (cleanMsg.length > 2000) {
+    const notice = document.getElementById('save-notice');
+    notice.textContent = '行动描述最多 2000 字，请缩短后再发送。'; notice.style.display = 'block';
     return;
   }
-  const input = document.getElementById('input');
-  const sendBtn = document.getElementById('send');
-  const optsArea = document.getElementById('opts-area');
-
-  input.disabled = true; sendBtn.disabled = true;
-  optsArea.style.display = 'none';
-  optsArea.innerHTML = '';
-
-  // 显示玩家消息
-  const out = document.getElementById('output');
-  const playerDiv = document.createElement('div');
-  playerDiv.className = 'msg player';
-  playerDiv.textContent = cleanMsg;
-  out.appendChild(playerDiv);
-  out.scrollTop = out.scrollHeight;
-
-  gameProgress.playerActions.push(cleanMsg);
-  if (gameProgress.playerActions.length > 20) gameProgress.playerActions.shift();
-
-  history.push({ role: 'user', content: cleanMsg });
-  if (history.length > 30) history.splice(1, history.length - 28);
-
-  // Loading 指示器
-  const loadingDiv = document.createElement('div');
-  loadingDiv.className = 'msg gm';
-  const loadingSpan = document.createElement('span');
-  loadingSpan.className = 'loading';
-  loadingSpan.textContent = '▌';
-  loadingDiv.appendChild(loadingSpan);
-  out.appendChild(loadingDiv);
-  out.scrollTop = out.scrollHeight;
-
+  if (['结束','退出','谢幕','end','END'].includes(cleanMsg)) { showEndingCredits(); return; }
+  pendingTurn = cleanMsg; pendingNode = addPlayerMessage(cleanMsg); saveGame();
+  await executePending();
+}
+// 保留最近完整对话轮次，同时满足服务端字符和 UTF-8 请求体预算。
+function buildChatContext(transcript, action) {
+  const system = transcript[0], user = {role:'user', content:action};
+  const fits = messages => messages.length <= 32 && messages.every(m => m.content.length <= 8000) &&
+    messages.reduce((sum,m) => sum + m.content.length, 0) <= 24000 &&
+    new TextEncoder().encode(JSON.stringify({model:'deepseek-chat', messages, temperature:.85, max_tokens:1500})).length <= 60 * 1024;
+  let selected = [];
+  for (let i = transcript.length - 1; i >= 2; i--) {
+    if (transcript[i].role !== 'assistant' || transcript[i-1].role !== 'user') continue;
+    const pair = [transcript[i-1], transcript[i]];
+    if (!fits([system, ...pair, ...selected, user])) break;
+    selected = [...pair, ...selected]; i--;
+  }
+  if (transcript[1]?.role === 'assistant' && fits([system, transcript[1], ...selected, user]))
+    selected.unshift(transcript[1]);
+  const messages = [system, ...selected, user];
+  if (!fits(messages)) throw new Error('本次行动过长，请返回选项并缩短描述。');
+  return messages;
+}
+async function executePending() {
+  if (busy || !pendingTurn) return;
+  busy = true;
+  document.getElementById('input').disabled = document.getElementById('send').disabled = true;
+  const area = document.getElementById('opts-area'); area.innerHTML = ''; area.style.display = 'none';
+  const loading = document.createElement('div'); loading.className = 'msg system loading'; loading.textContent = '正在续写这一幕…';
+  const out = document.getElementById('output'); out.appendChild(loading); out.scrollTop = out.scrollHeight;
   try {
-    let imagePromise = null;
-    try {
-      const scenePrompt = await requestScenePrompt();
-      if (scenePrompt) imagePromise = generateImage(scenePrompt);
-    } catch (e) {
-      console.warn('短场景提示生成失败，将在正文生成后回退生图:', e);
-    }
-
-    const reply = await callChat(history, { temperature: .85, max_tokens: 1500 });
-    if (!imagePromise) imagePromise = generateImage(extractScene(reply));
-
-    loadingDiv.remove();
-    history.push({ role: 'assistant', content: reply });
-
-    renderAssistantMessage(reply, imagePromise, 28);
-
-  } catch (e) {
-    loadingDiv.remove();
-    const errDiv = document.createElement('div');
-    errDiv.className = 'msg system';
-    errDiv.textContent = '[ 连接中断。AI 不在线——但白杨大陆仍在转动。请重试。]';
-    out.appendChild(errDiv);
-    console.error(e);
-    input.disabled = false; sendBtn.disabled = false;
-    input.focus();
+    const messages = buildChatContext(history, pendingTurn);
+    const reply = await callChat(messages);
+    history.push({role:'user', content:pendingTurn}, {role:'assistant', content:reply});
+    gameProgress.playerActions.push(pendingTurn);
+    if (gameProgress.playerActions.length > 20) gameProgress.playerActions.shift();
+    pendingTurn = null; pendingNode = null; loading.remove();
+    renderAssistantMessage(reply, null, 28);
+  } catch (error) {
+    loading.remove(); busy = false; showRecovery(error.message || '连接中断，请重试。');
   }
 }
-
-function afterMessage(reply) {
-  const input = document.getElementById('input');
-  const sendBtn = document.getElementById('send');
-  const optsArea = document.getElementById('opts-area');
-
-  // 检测是否进入战斗
-  const wasBattle = inBattle;
-  inBattle = detectBattle(reply);
-  setAudioMode(inBattle ? 'battle' : 'normal');
-  const opts = getOptions(reply);
-
-  if (inBattle && opts.length >= 4) {
-    // 战斗模式：只显示固定选项，禁用自由输入
-    input.style.display = 'none';
-    sendBtn.style.display = 'none';
-    renderOptionButtons(opts, true);
-    input.disabled = true; sendBtn.disabled = true;
-  } else {
-    // 普通模式：恢复自由输入，同时把建议选项渲染成按钮
-    input.style.display = 'flex';
-    sendBtn.style.display = 'inline-flex';
-    input.disabled = false; sendBtn.disabled = false;
-    renderOptionButtons(opts, false);
-    input.focus();
-
-    // 如果刚结束战斗
-    if (wasBattle && !inBattle) {
-      input.style.display = 'flex';
-      sendBtn.style.display = 'inline-flex';
-    }
+function afterMessage() { showControls(); }
+function restartGame() {
+  if (!window.confirm('重新开始会清除本机已有进度，确定重新开始吗？')) return;
+  try { localStorage.removeItem(SAVE_KEY); } catch (_) {
+    window.alert('无法清除本机存档，请检查浏览器存储权限后重试。当前进度已保留。');
+    return;
   }
-
+  window.location.reload();
 }
 
+document.getElementById('skip-typing').addEventListener('click', flushAll);
 // 点击消息区域即时完成打字
 document.getElementById('output').addEventListener('click', (e) => {
   if (typingTimer) {
@@ -1118,7 +1117,7 @@ document.body.dataset.audio = 'off';
 document.body.dataset.audioMode = audioMode;
 document.getElementById('continue-run').addEventListener('click', hideEndingCredits);
 document.getElementById('restart-run').addEventListener('click', () => {
-  window.location.reload();
+  restartGame();
 });
 
 document.getElementById('send').addEventListener('click', () => {
@@ -1129,7 +1128,7 @@ document.getElementById('send').addEventListener('click', () => {
 });
 
 document.getElementById('input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' && !e.isComposing) {
     if (inBattle) return;
     const input = document.getElementById('input');
     send(input.value);
@@ -1138,7 +1137,8 @@ document.getElementById('input').addEventListener('keydown', e => {
 });
 
 // 开场
-window.addEventListener('DOMContentLoaded', () => {
+function startIntro() {
+  busy = true; showControls();
   setTimeout(() => {
     const intro = `2026年盛夏清晨，梧桐枝叶掩映着中传北门的金属门禁，冰冷的机械红光扫过每一位入校学子。整片白杨大陆安静得近乎诡异——没有喧闹、没有闲谈、没有嬉笑，只有规律划一的脚步声与头顶循环不休的AI广播。
 
@@ -1155,10 +1155,20 @@ B. 观察北门附近的环境，寻找AI系统的漏洞
 C. 尝试感知大黄狗提到的纯白共情光点
 D. 跟随大白鹅，看看它想带你去哪里`;
 
-    renderAssistantMessage(intro, generateImage(extractScene(intro)), 25);
-
     history.push({ role: 'assistant', content: intro });
+    renderAssistantMessage(intro, null, 25);
   }, 500);
+}
+window.addEventListener('DOMContentLoaded', () => {
+  busy = true; showControls();
+  const saved = readSave();
+  if (!saved) { startIntro(); return; }
+  const area = document.getElementById('opts-area'); area.style.display = 'flex';
+  const note = document.createElement('div'); note.className = 'msg system'; note.textContent = '发现本机冒险存档'; area.appendChild(note);
+  for (const [label, action] of [['继续冒险', () => restoreGame(saved)], ['重新开始', restartGame]]) {
+    const button = document.createElement('button'); button.className = 'btn-opt'; button.textContent = label;
+    button.addEventListener('click', action); area.appendChild(button);
+  }
 });
 </script>
 </body>

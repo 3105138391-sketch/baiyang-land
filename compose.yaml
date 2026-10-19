@@ -1,0 +1,20 @@
+services:
+  baiyang:
+    build: .
+    ports:
+      - "${HOST_PORT:-3000}:8080"
+    env_file:
+      - .env
+    environment:
+      LIMITS_DB_PATH: /app/.state/request_limits.sqlite3
+    volumes:
+      - baiyang-state:/app/.state
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  baiyang-state:
+    name: baiyang-state

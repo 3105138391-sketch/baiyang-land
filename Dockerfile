@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PORT=8080
 
-COPY baiyang.html server.py ./
+COPY baiyang.html server.py api_limits.py ./
 COPY assets ./assets
 
 EXPOSE 8080

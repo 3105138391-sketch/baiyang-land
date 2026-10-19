@@ -4,3 +4,8 @@
 *.log
 __pycache__/
 *.pyc
+
+.state
+__pycache__
+tests
+.impeccable
